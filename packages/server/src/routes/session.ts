@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { join } from 'path';
+import { existsSync } from 'fs';
 import type { Session, ChatMessage, FileReference, ToolEvent, MessagePart } from '../types.js';
 import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
+import { parseMilestones } from '../services/milestonesParser.js';
 import { createLLMClient, streamTeacherResponse, isLLMConfigured, type LLMConfig } from '../services/llm.js';
 import type { ModelMessage } from 'ai';
 
@@ -202,6 +204,27 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
       res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
       res.end();
     }
+  });
+
+  // Get session milestones progress
+  router.get('/:id/milestones', (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    const milestonesPath = join(dataDir, session.id, 'milestones.md');
+    if (!existsSync(milestonesPath)) {
+      res.json({ total: 0, completed: 0 });
+      return;
+    }
+    const fileService = new FileService(join(dataDir, session.id));
+    const { content } = fileService.readFile({ path: 'milestones.md' });
+    const milestones = parseMilestones(content);
+    res.json({
+      total: milestones.items.length,
+      completed: milestones.items.filter((i) => i.completed).length,
+    });
   });
 
   return router;

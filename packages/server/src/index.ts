@@ -24,7 +24,7 @@ app.use(express.json({ limit: '10mb' }));
 const store = new Store(DATA_DIR);
 
 app.use('/api/session', createSessionRouter(store, DATA_DIR, llmConfig));
-app.use('/api', createFilesRouter(store, DATA_DIR));
+app.use('/api', createFilesRouter(store, DATA_DIR, llmConfig));
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

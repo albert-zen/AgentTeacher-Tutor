@@ -3,8 +3,9 @@ import { join } from 'path';
 import { readdirSync, existsSync, unlinkSync } from 'fs';
 import { FileService } from '../services/fileService.js';
 import type { Store } from '../db/index.js';
+import { isLLMConfigured, type LLMConfig } from '../services/llm.js';
 
-export function createFilesRouter(store: Store, dataDir: string) {
+export function createFilesRouter(store: Store, dataDir: string, llmConfig: LLMConfig) {
   const router = Router();
 
   function getFileService(sessionId: string): FileService | null {
@@ -102,6 +103,35 @@ export function createFilesRouter(store: Store, dataDir: string) {
     const svc = new FileService(dataDir);
     svc.writeFile({ path: 'profile.md', content });
     res.json({ success: true });
+  });
+
+  // Global system prompt
+  router.get('/system-prompt', (_req, res) => {
+    const promptPath = join(dataDir, 'system-prompt.md');
+    if (!existsSync(promptPath)) {
+      res.json({ content: '', totalLines: 0 });
+      return;
+    }
+    const svc = new FileService(dataDir);
+    const result = svc.readFile({ path: 'system-prompt.md' });
+    res.json(result);
+  });
+
+  router.put('/system-prompt', (req, res) => {
+    const { content } = req.body;
+    const svc = new FileService(dataDir);
+    svc.writeFile({ path: 'system-prompt.md', content });
+    res.json({ success: true });
+  });
+
+  // LLM status (read-only, no apiKey exposed)
+  router.get('/llm-status', (_req, res) => {
+    res.json({
+      configured: isLLMConfigured(llmConfig),
+      provider: llmConfig.provider,
+      model: llmConfig.model,
+      baseURL: llmConfig.baseURL,
+    });
   });
 
   return router;

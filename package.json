@@ -1,6 +1,7 @@
 {
   "name": "agent-teacher-tutor",
   "private": true,
+  "type": "module",
   "workspaces": [
     "packages/*"
   ],
@@ -9,10 +10,32 @@
     "dev:client": "node ./node_modules/vite/bin/vite.js --config packages/client/vite.config.ts",
     "dev": "node ./node_modules/concurrently/dist/bin/concurrently.js \"node ./node_modules/tsx/dist/cli.mjs watch packages/server/src/index.ts\" \"node ./node_modules/vite/bin/vite.js --config packages/client/vite.config.ts\"",
     "test": "node ./node_modules/vitest/vitest.mjs run",
-    "test:watch": "node ./node_modules/vitest/vitest.mjs"
+    "test:watch": "node ./node_modules/vitest/vitest.mjs",
+    "lint": "node ./node_modules/eslint/bin/eslint.js packages/",
+    "lint:fix": "node ./node_modules/eslint/bin/eslint.js packages/ --fix",
+    "format": "node ./node_modules/prettier/bin/prettier.cjs --write \"packages/**/*.{ts,tsx,js,json,css}\"",
+    "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check \"packages/**/*.{ts,tsx,js,json,css}\"",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "packages/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "packages/**/*.{js,json,css}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "concurrently": "^9.1.0",
-    "typescript": "^5.7.0"
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.55.0"
   }
 }

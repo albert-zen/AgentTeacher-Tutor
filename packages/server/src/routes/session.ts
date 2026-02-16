@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { join } from 'path';
-import type { Session, ChatMessage } from '../types.js';
+import type { Session, ChatMessage, FileReference, ToolEvent } from '../types.js';
 import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
@@ -12,6 +12,11 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
   const router = Router();
   const llmReady = isLLMConfigured(llmConfig);
   const model = llmReady ? createLLMClient(llmConfig) : null;
+
+  // List sessions
+  router.get('/', (_req, res) => {
+    res.json(store.getSessions());
+  });
 
   // Create session
   router.post('/', (req, res) => {
@@ -88,13 +93,25 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
       }
     }
 
+    // Merge parsed inline refs + explicit body refs
+    const allRefs: FileReference[] = [...refs];
+    if (references && Array.isArray(references)) {
+      for (const ref of references) {
+        allRefs.push({
+          file: ref.file ?? ref.filePath ?? 'selection',
+          startLine: ref.startLine,
+          endLine: ref.endLine,
+        });
+      }
+    }
+
     // Save user message
     const userMsg: ChatMessage = {
       id: uuid(),
       sessionId: session.id,
       role: 'user',
       content: message,
-      references: refs.length > 0 ? refs : undefined,
+      references: allRefs.length > 0 ? allRefs : undefined,
       createdAt: new Date().toISOString(),
     };
     store.addMessage(userMsg);
@@ -125,25 +142,37 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
       const result = await streamTeacherResponse(model, fileService, coreMessages);
 
       let fullText = '';
+      const toolEvents: ToolEvent[] = [];
 
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
-          fullText += part.textDelta;
-          res.write(`data: ${JSON.stringify({ type: 'text-delta', content: part.textDelta })}\n\n`);
+          const delta = (part as any).textDelta ?? (part as any).delta ?? (part as any).text ?? '';
+          fullText += delta;
+          if (delta) {
+            res.write(`data: ${JSON.stringify({ type: 'text-delta', content: delta })}\n\n`);
+          }
         } else if (part.type === 'tool-call') {
-          res.write(`data: ${JSON.stringify({ type: 'tool-call', name: part.toolName, args: part.args })}\n\n`);
+          toolEvents.push({ type: 'tool-call', toolName: part.toolName, args: part.args as Record<string, unknown> });
+          res.write(`data: ${JSON.stringify({ type: 'tool-call', toolName: part.toolName, args: part.args })}\n\n`);
         } else if (part.type === 'tool-result') {
-          res.write(`data: ${JSON.stringify({ type: 'tool-result', name: part.toolName, result: part.result })}\n\n`);
+          toolEvents.push({ type: 'tool-result', toolName: part.toolName, result: part.result });
+          res.write(`data: ${JSON.stringify({ type: 'tool-result', toolName: part.toolName, result: part.result })}\n\n`);
+        } else if (part.type === 'reasoning') {
+          // GLM-4.7 reasoning tokens - skip, don't send to frontend
+        } else {
+          // Debug: log unknown event types
+          console.log('Stream event:', part.type, JSON.stringify(part).substring(0, 200));
         }
       }
 
-      // Save assistant message
-      if (fullText.trim()) {
+      // Save assistant message with tool events
+      if (fullText.trim() || toolEvents.length > 0) {
         const assistantMsg: ChatMessage = {
           id: uuid(),
           sessionId: session.id,
           role: 'assistant',
           content: fullText,
+          toolEvents: toolEvents.length > 0 ? toolEvents : undefined,
           createdAt: new Date().toISOString(),
         };
         store.addMessage(assistantMsg);

@@ -130,6 +130,15 @@ export function useSession() {
     setStreamingParts([]);
   }, []);
 
+  const stopStreaming = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setStreaming(false);
+    setStreamingParts([]);
+  }, []);
+
   return {
     session,
     messages,
@@ -139,6 +148,7 @@ export function useSession() {
     startSession,
     loadSession,
     clearSession,
+    stopStreaming,
     send,
     refreshFiles,
   };

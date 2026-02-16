@@ -19,6 +19,7 @@ export default function App() {
     startSession,
     loadSession,
     clearSession,
+    stopStreaming,
     send,
     refreshFiles,
   } = useSession();
@@ -286,6 +287,7 @@ export default function App() {
             onAddAttachment={addAttachment}
             copySource={copySourceRef}
             onSend={send}
+            onStop={stopStreaming}
             onReferenceClick={handleReferenceClick}
           />
         </div>

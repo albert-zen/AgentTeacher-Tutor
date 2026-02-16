@@ -22,6 +22,7 @@ interface Props {
   onAddAttachment: (att: Attachment) => void;
   copySource: React.RefObject<CopySource | null>;
   onSend: (message: string, references: FileRef[]) => void;
+  onStop?: () => void;
   onReferenceClick?: (file: string, startLine?: number, endLine?: number) => void;
 }
 
@@ -197,6 +198,7 @@ export default function ChatPanel({
   onAddAttachment,
   copySource,
   onSend,
+  onStop,
   onReferenceClick,
 }: Props) {
   const [input, setInput] = useState('');
@@ -355,13 +357,25 @@ export default function ChatPanel({
               className="w-full bg-transparent px-3 py-2 text-sm text-zinc-200 resize-none outline-none placeholder-zinc-500"
             />
           </div>
-          <button
-            onClick={handleSubmit}
-            disabled={streaming || !input.trim()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm self-end"
-          >
-            发送
-          </button>
+          {streaming ? (
+            <button
+              onClick={onStop}
+              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm self-end flex items-center gap-1.5"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                <rect x="2" y="2" width="8" height="8" rx="1" />
+              </svg>
+              停止
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={!input.trim()}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm self-end"
+            >
+              发送
+            </button>
+          )}
         </div>
       </div>
     </div>

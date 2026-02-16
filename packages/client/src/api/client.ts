@@ -105,6 +105,41 @@ export async function updateProfile(content: string): Promise<void> {
   });
 }
 
+export async function getSystemPrompt(): Promise<FileContent> {
+  const res = await fetch(`${BASE}/system-prompt`);
+  return res.json();
+}
+
+export async function updateSystemPrompt(content: string): Promise<void> {
+  await fetch(`${BASE}/system-prompt`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export interface LLMStatus {
+  configured: boolean;
+  provider: string;
+  model: string;
+  baseURL: string;
+}
+
+export async function getLLMStatus(): Promise<LLMStatus> {
+  const res = await fetch(`${BASE}/llm-status`);
+  return res.json();
+}
+
+export interface MilestoneProgress {
+  total: number;
+  completed: number;
+}
+
+export async function getSessionMilestones(sessionId: string): Promise<MilestoneProgress> {
+  const res = await fetch(`${BASE}/session/${sessionId}/milestones`);
+  return res.json();
+}
+
 export interface SSEEvent {
   type: 'text-delta' | 'tool-call' | 'tool-result' | 'done' | 'error';
   content?: string;

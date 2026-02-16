@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, tool, type CoreMessage } from 'ai';
+import { streamText, tool, stepCountIs, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import type { FileService } from './fileService.js';
 import { executeToolCall } from './teacher.js';
@@ -20,14 +20,16 @@ export function createLLMClient(config: LLMConfig) {
     apiKey: config.apiKey,
     baseURL: config.baseURL,
   });
-  return openai(config.model);
+  // Use .chat() to force /chat/completions endpoint (not /responses)
+  // Required for OpenAI-compatible providers like DashScope
+  return openai.chat(config.model);
 }
 
 export function buildTools(fileService: FileService) {
   return {
     read_file: tool({
       description: 'Read a file or specific line range from the session workspace.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('Relative file path'),
         startLine: z.number().optional().describe('Start line (1-based)'),
         endLine: z.number().optional().describe('End line (1-based, inclusive)'),
@@ -38,7 +40,7 @@ export function buildTools(fileService: FileService) {
     }),
     write_file: tool({
       description: 'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
-      parameters: z.object({
+      inputSchema: z.object({
         path: z.string().describe('Relative file path'),
         content: z.string().describe('Content to write'),
         startLine: z.number().optional().describe('Start line for partial replace (1-based)'),
@@ -98,7 +100,7 @@ If student profile information is provided, adapt your teaching style, examples,
 export async function streamTeacherResponse(
   model: ReturnType<typeof createLLMClient>,
   fileService: FileService,
-  messages: CoreMessage[],
+  messages: ModelMessage[],
 ) {
   const tools = buildTools(fileService);
 
@@ -107,6 +109,6 @@ export async function streamTeacherResponse(
     system: getSystemPrompt(),
     messages,
     tools,
-    maxSteps: 10,
-  });
+    stopWhen: stepCountIs(10),
+  }) as any; // eslint-disable-line @typescript-eslint/no-explicit-any -- StreamTextResult generic is too complex to name
 }

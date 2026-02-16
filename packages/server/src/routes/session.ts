@@ -6,7 +6,7 @@ import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
 import { createLLMClient, streamTeacherResponse, isLLMConfigured, type LLMConfig } from '../services/llm.js';
-import type { CoreMessage } from 'ai';
+import type { ModelMessage } from 'ai';
 
 export function createSessionRouter(store: Store, dataDir: string, llmConfig: LLMConfig) {
   const router = Router();
@@ -118,12 +118,12 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
 
     // Build conversation history for LLM
     const history = store.getMessages(session.id);
-    const coreMessages: CoreMessage[] = history.slice(0, -1).map((m) => ({
-      role: m.role,
+    const llmMessages: ModelMessage[] = history.slice(0, -1).map((m) => ({
+      role: m.role as 'user' | 'assistant',
       content: m.content,
     }));
     // Last message is the current user message with resolved references
-    coreMessages.push({ role: 'user', content: userContent });
+    llmMessages.push({ role: 'user', content: userContent });
 
     // SSE streaming response
     res.setHeader('Content-Type', 'text/event-stream');
@@ -139,29 +139,28 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
     }
 
     try {
-      const result = await streamTeacherResponse(model, fileService, coreMessages);
+      const result = await streamTeacherResponse(model, fileService, llmMessages);
 
       let fullText = '';
       const toolEvents: ToolEvent[] = [];
 
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
-          const delta = (part as any).textDelta ?? (part as any).delta ?? (part as any).text ?? '';
+          const delta = part.text ?? '';
           fullText += delta;
           if (delta) {
             res.write(`data: ${JSON.stringify({ type: 'text-delta', content: delta })}\n\n`);
           }
         } else if (part.type === 'tool-call') {
-          toolEvents.push({ type: 'tool-call', toolName: part.toolName, args: part.args as Record<string, unknown> });
-          res.write(`data: ${JSON.stringify({ type: 'tool-call', toolName: part.toolName, args: part.args })}\n\n`);
+          const args = part.input as Record<string, unknown>;
+          toolEvents.push({ type: 'tool-call', toolName: part.toolName, args });
+          res.write(`data: ${JSON.stringify({ type: 'tool-call', toolName: part.toolName, args })}\n\n`);
         } else if (part.type === 'tool-result') {
-          toolEvents.push({ type: 'tool-result', toolName: part.toolName, result: part.result });
-          res.write(`data: ${JSON.stringify({ type: 'tool-result', toolName: part.toolName, result: part.result })}\n\n`);
-        } else if (part.type === 'reasoning') {
+          const toolResult = part.output;
+          toolEvents.push({ type: 'tool-result', toolName: part.toolName, result: toolResult });
+          res.write(`data: ${JSON.stringify({ type: 'tool-result', toolName: part.toolName, result: toolResult })}\n\n`);
+        } else if (part.type === 'reasoning-delta') {
           // GLM-4.7 reasoning tokens - skip, don't send to frontend
-        } else {
-          // Debug: log unknown event types
-          console.log('Stream event:', part.type, JSON.stringify(part).substring(0, 200));
         }
       }
 

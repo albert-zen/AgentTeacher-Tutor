@@ -76,6 +76,14 @@ export function useSession() {
     sendMessage(sess.id, `我想学习：${concept}`, []);
   }, [sendMessage]);
 
+  const loadSession = useCallback(async (id: string) => {
+    const data = await api.getSession(id);
+    setSession(data.session);
+    sessionRef.current = data.session;
+    setMessages(data.messages);
+    await refreshFilesBySessionId(id);
+  }, [refreshFilesBySessionId]);
+
   const send = useCallback(
     (message: string, references: api.FileRef[] = []) => {
       if (!sessionRef.current) return;
@@ -84,6 +92,19 @@ export function useSession() {
     [sendMessage],
   );
 
+  const clearSession = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setSession(null);
+    sessionRef.current = null;
+    setMessages([]);
+    setFiles([]);
+    setStreaming(false);
+    setStreamingText('');
+  }, []);
+
   return {
     session,
     messages,
@@ -91,6 +112,8 @@ export function useSession() {
     streaming,
     streamingText,
     startSession,
+    loadSession,
+    clearSession,
     send,
     refreshFiles,
   };

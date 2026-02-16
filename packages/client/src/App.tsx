@@ -4,6 +4,7 @@ import MarkdownEditor from './components/MarkdownEditor';
 import ChatPanel from './components/ChatPanel';
 import MilestoneBar from './components/MilestoneBar';
 import SelectionPopup from './components/SelectionPopup';
+import LandingPage from './components/landing/LandingPage';
 import { useSession } from './hooks/useSession';
 import { useTextSelection } from './hooks/useTextSelection';
 import * as api from './api/client';
@@ -25,7 +26,6 @@ export default function App() {
   } = useSession();
   const { handleSelection } = useTextSelection();
 
-  const [conceptInput, setConceptInput] = useState('');
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [pastSessions, setPastSessions] = useState<api.Session[]>([]);
   const [fileContent, setFileContent] = useState('');
@@ -106,13 +106,6 @@ export default function App() {
       .catch(() => {});
   }, [files]);
 
-  const handleStart = () => {
-    const concept = conceptInput.trim();
-    if (!concept) return;
-    startSession(concept);
-    setConceptInput('');
-  };
-
   const handleCreateFile = useCallback(
     async (name: string) => {
       if (!session) return;
@@ -166,60 +159,9 @@ export default function App() {
     setActiveFile(null);
   };
 
-  // No session: show concept input + session list
+  // No session: show landing page
   if (!session) {
-    return (
-      <div className="h-full bg-zinc-950 flex items-center justify-center">
-        <div className="w-full max-w-lg px-6">
-          <h1 className="text-2xl font-bold text-white mb-2">Teacher Agent</h1>
-          <p className="text-zinc-400 text-sm mb-6">输入你想学习的概念，开始学习之旅</p>
-          <div className="flex gap-2 mb-8">
-            <input
-              autoFocus
-              value={conceptInput}
-              onChange={(e) => setConceptInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleStart()}
-              placeholder="例如：神经网络、量子力学、微积分..."
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-500 outline-none focus:border-blue-500"
-            />
-            <button
-              onClick={handleStart}
-              disabled={!conceptInput.trim()}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg font-medium"
-            >
-              开始
-            </button>
-          </div>
-          {pastSessions.length > 0 && (
-            <div>
-              <p className="text-zinc-500 text-xs uppercase tracking-wide mb-3">继续学习</p>
-              <div className="space-y-2">
-                {pastSessions
-                  .slice()
-                  .reverse()
-                  .map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => handleLoadSession(s.id)}
-                      className="w-full text-left px-4 py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors"
-                    >
-                      <span className="text-white text-sm">{s.concept}</span>
-                      <span className="text-zinc-600 text-xs ml-2">
-                        {new Date(s.createdAt).toLocaleDateString('zh-CN', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+    return <LandingPage sessions={pastSessions} onStart={startSession} onLoadSession={handleLoadSession} />;
   }
 
   return (

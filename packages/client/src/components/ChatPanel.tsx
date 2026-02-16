@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { FileRef, MessagePart, Attachment, CopySource } from '../api/client';
 
 interface Message {
@@ -44,14 +45,16 @@ function MessageContent({ content, onRefClick }: { content: string; onRefClick?:
   if (last < content.length) parts.push(content.slice(last));
 
   if (parts.length === 1 && typeof parts[0] === 'string') {
-    return <ReactMarkdown>{content}</ReactMarkdown>;
+    return <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>;
   }
 
   return (
     <div>
       {parts.map((part, i) =>
         typeof part === 'string' ? (
-          <ReactMarkdown key={i}>{part}</ReactMarkdown>
+          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+            {part}
+          </ReactMarkdown>
         ) : (
           <button
             key={i}

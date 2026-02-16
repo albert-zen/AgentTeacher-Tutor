@@ -15,15 +15,15 @@
     "lint:fix": "node ./node_modules/eslint/bin/eslint.js packages/ --fix",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write \"packages/**/*.{ts,tsx,js,json,css}\"",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check \"packages/**/*.{ts,tsx,js,json,css}\"",
-    "prepare": "husky"
+    "prepare": "node ./node_modules/husky/bin.js"
   },
   "lint-staged": {
     "packages/**/*.{ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
+      "node ./node_modules/eslint/bin/eslint.js --fix",
+      "node ./node_modules/prettier/bin/prettier.cjs --write"
     ],
     "packages/**/*.{js,json,css}": [
-      "prettier --write"
+      "node ./node_modules/prettier/bin/prettier.cjs --write"
     ]
   },
   "devDependencies": {

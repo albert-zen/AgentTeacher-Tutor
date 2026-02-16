@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.29",
-    "ai": "^4.0.0",
+    "ai": "^6.0.86",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^5.0.0",

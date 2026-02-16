@@ -23,6 +23,19 @@ export class FileService {
     return absPath;
   }
 
+  /**
+   * Split file content into lines, stripping the phantom empty element
+   * caused by trailing newlines: "A\nB\n".split('\n') → ["A","B",""]
+   */
+  private splitLines(raw: string): string[] {
+    if (raw === '') return [];
+    const lines = raw.split('\n');
+    if (raw.endsWith('\n') && lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+    return lines;
+  }
+
   readFile(params: ReadFileParams): ReadFileResult {
     const { path: relPath, startLine, endLine } = params;
     const absPath = this.resolvePath(relPath);
@@ -32,11 +45,11 @@ export class FileService {
     }
 
     const raw = readFileSync(absPath, 'utf-8');
-    const lines = raw.split('\n');
+    const lines = this.splitLines(raw);
     const totalLines = lines.length;
 
     if (startLine === undefined && endLine === undefined) {
-      return { content: raw, totalLines };
+      return { content: lines.join('\n'), totalLines };
     }
 
     const start = startLine ?? 1;
@@ -64,16 +77,20 @@ export class FileService {
         throw new Error('Cannot replace lines in non-existent file');
       }
       const raw = readFileSync(absPath, 'utf-8');
-      const lines = raw.split('\n');
+      const hadTrailingNewline = raw.endsWith('\n');
+      const lines = this.splitLines(raw);
       const totalLines = lines.length;
-      if (endLine! > totalLines) {
+      if (startLine! < 1 || endLine! > totalLines) {
         throw new Error('endLine exceeds file length');
       }
       const before = lines.slice(0, startLine! - 1);
       const after = lines.slice(endLine!);
       const newContent = content.endsWith('\n') ? content.slice(0, -1) : content;
       const newLines = newContent.split('\n');
-      const result = [...before, ...newLines, ...after].join('\n');
+      let result = [...before, ...newLines, ...after].join('\n');
+      if (hadTrailingNewline) {
+        result += '\n';
+      }
       mkdirSync(resolve(absPath, '..'), { recursive: true });
       writeFileSync(absPath, result);
     } else {

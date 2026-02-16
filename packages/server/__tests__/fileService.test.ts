@@ -100,3 +100,78 @@ describe('read_file', () => {
     expect(result.content).toBe('A\nB');
   });
 });
+
+describe('trailing newline handling', () => {
+  it('readFile — file with trailing newline reports correct totalLines', () => {
+    svc.writeFile({ path: 'test.md', content: 'A\nB\n' });
+    const result = svc.readFile({ path: 'test.md' });
+    expect(result.totalLines).toBe(2);
+    expect(result.content).toBe('A\nB');
+  });
+
+  it('readFile — file with trailing newline returns correct line range', () => {
+    svc.writeFile({ path: 'test.md', content: 'A\nB\nC\n' });
+    const result = svc.readFile({ path: 'test.md', startLine: 2, endLine: 3 });
+    expect(result.content).toBe('B\nC');
+    expect(result.totalLines).toBe(3);
+  });
+
+  it('writeFile — line replacement preserves trailing newline on disk', () => {
+    svc.writeFile({ path: 'test.md', content: 'A\nB\nC\n' });
+    svc.writeFile({ path: 'test.md', content: 'X', startLine: 2, endLine: 2 });
+    const result = svc.readFile({ path: 'test.md' });
+    expect(result.content).toBe('A\nX\nC');
+    expect(result.totalLines).toBe(3);
+  });
+
+  it('writeFile — line replacement works without trailing newline', () => {
+    svc.writeFile({ path: 'test.md', content: 'A\nB\nC' });
+    svc.writeFile({ path: 'test.md', content: 'X', startLine: 2, endLine: 2 });
+    const result = svc.readFile({ path: 'test.md' });
+    expect(result.content).toBe('A\nX\nC');
+    expect(result.totalLines).toBe(3);
+  });
+
+  it('empty file has totalLines 0', () => {
+    svc.writeFile({ path: 'test.md', content: '' });
+    const result = svc.readFile({ path: 'test.md' });
+    expect(result.content).toBe('');
+    expect(result.totalLines).toBe(0);
+  });
+
+  it('single line file without newline has totalLines 1', () => {
+    svc.writeFile({ path: 'test.md', content: 'Hello' });
+    const result = svc.readFile({ path: 'test.md' });
+    expect(result.content).toBe('Hello');
+    expect(result.totalLines).toBe(1);
+  });
+
+  it('single line file with trailing newline has totalLines 1', () => {
+    svc.writeFile({ path: 'test.md', content: 'Hello\n' });
+    const result = svc.readFile({ path: 'test.md' });
+    expect(result.content).toBe('Hello');
+    expect(result.totalLines).toBe(1);
+  });
+
+  it('endLine validation uses real line count, not phantom', () => {
+    svc.writeFile({ path: 'test.md', content: 'A\nB\n' });
+    expect(() => {
+      svc.writeFile({ path: 'test.md', content: 'X', startLine: 1, endLine: 3 });
+    }).toThrow();
+  });
+
+  it('line replacement at end of file with trailing newline', () => {
+    svc.writeFile({ path: 'test.md', content: 'A\nB\nC\n' });
+    svc.writeFile({ path: 'test.md', content: 'X', startLine: 3, endLine: 3 });
+    const result = svc.readFile({ path: 'test.md' });
+    expect(result.content).toBe('A\nB\nX');
+    expect(result.totalLines).toBe(3);
+  });
+
+  it('line replacement on empty file throws', () => {
+    svc.writeFile({ path: 'test.md', content: '' });
+    expect(() => {
+      svc.writeFile({ path: 'test.md', content: 'X', startLine: 1, endLine: 1 });
+    }).toThrow();
+  });
+});

@@ -51,17 +51,15 @@ export default function FileTree({ files, activeFile, onSelect, onCreate, onDele
           >
             <span>{icon(file)}</span>
             <span className="flex-1 truncate">{file}</span>
-            {!['guidance.md', 'ground-truth.md', 'milestones.md'].includes(file) && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(file);
-                }}
-                className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400"
-              >
-                ×
-              </button>
-            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(file);
+              }}
+              className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400"
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>

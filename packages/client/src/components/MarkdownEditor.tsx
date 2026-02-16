@@ -24,14 +24,12 @@ export default function MarkdownEditor({ fileName, content, readOnly, onSave, on
     setEditing(false);
   };
 
-  const isSystemFile = ['guidance.md', 'ground-truth.md', 'milestones.md'].includes(fileName);
-
   return (
     <div className="h-full flex flex-col bg-zinc-950">
       <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
         <span className="text-sm font-medium text-zinc-300">{fileName}</span>
         <div className="flex gap-2">
-          {!isSystemFile && !readOnly && (
+          {!readOnly && (
             <>
               {editing ? (
                 <>

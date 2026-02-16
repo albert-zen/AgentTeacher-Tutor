@@ -6,11 +6,20 @@ export interface Session {
   createdAt: string;
 }
 
+export interface ToolEvent {
+  type: 'tool-call' | 'tool-result';
+  toolName: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+}
+
 export interface ChatMessage {
   id: string;
   sessionId: string;
   role: 'user' | 'assistant';
   content: string;
+  references?: FileRef[];
+  toolEvents?: ToolEvent[];
   createdAt: string;
 }
 
@@ -31,6 +40,11 @@ export async function createSession(concept: string): Promise<Session> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ concept }),
   });
+  return res.json();
+}
+
+export async function getSessions(): Promise<Session[]> {
+  const res = await fetch(`${BASE}/session`);
   return res.json();
 }
 
@@ -77,9 +91,9 @@ export async function updateProfile(content: string): Promise<void> {
 export interface SSEEvent {
   type: 'text-delta' | 'tool-call' | 'tool-result' | 'done' | 'error';
   content?: string;
-  name?: string;
-  args?: any;
-  result?: any;
+  toolName?: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
   error?: string;
 }
 

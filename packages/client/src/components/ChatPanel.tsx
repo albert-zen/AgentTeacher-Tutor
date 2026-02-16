@@ -1,19 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { FileRef } from '../api/client';
+import type { FileRef, ToolEvent } from '../api/client';
 import type { TextSelection } from '../hooks/useTextSelection';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  references?: FileRef[];
+  toolEvents?: ToolEvent[];
 }
 
 interface Props {
   messages: Message[];
   streaming: boolean;
   streamingText: string;
+  streamingToolEvents: ToolEvent[];
   selection: TextSelection | null;
+  pendingAsk?: string | null;
+  onClearPendingAsk?: () => void;
   onSend: (message: string, references: FileRef[]) => void;
   onClearSelection: () => void;
   getReference: () => string;
@@ -23,7 +28,6 @@ interface Props {
 const REF_REGEX = /\[([^\[\]:]+\.md)(?::(\d+):(\d+))?\]/g;
 
 function MessageContent({ content, onRefClick }: { content: string; onRefClick?: Props['onReferenceClick'] }) {
-  // Split content by references and render them as clickable
   const parts: (string | { file: string; start?: number; end?: number; raw: string })[] = [];
   let last = 0;
   const regex = new RegExp(REF_REGEX.source, 'g');
@@ -55,10 +59,74 @@ function MessageContent({ content, onRefClick }: { content: string; onRefClick?:
             onClick={() => onRefClick?.(part.file, part.start, part.end)}
             className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-900/40 border border-blue-700/50 rounded text-blue-400 text-xs hover:bg-blue-800/40 mx-0.5"
           >
-            📎 {part.raw}
+            {part.raw}
           </button>
         ),
       )}
+    </div>
+  );
+}
+
+function toolLabel(event: ToolEvent): string {
+  const path = (event.args as Record<string, unknown>)?.path as string | undefined;
+  if (event.type === 'tool-call') {
+    if (event.toolName === 'read_file') return `Reading ${path ?? 'file'}`;
+    if (event.toolName === 'write_file') return `Writing ${path ?? 'file'}`;
+    return event.toolName;
+  }
+  if (event.toolName === 'read_file') return `Read ${path ?? 'file'}`;
+  if (event.toolName === 'write_file') return `Wrote ${path ?? 'file'}`;
+  return `${event.toolName} done`;
+}
+
+function ToolEventCard({ event }: { event: ToolEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const isCall = event.type === 'tool-call';
+  const icon = isCall
+    ? event.toolName === 'read_file' ? '\u{1F4D6}' : '\u{270F}\u{FE0F}'
+    : '\u2713';
+
+  return (
+    <div className="my-0.5">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 px-2 py-1 bg-zinc-700/50 border border-zinc-600/50 rounded text-xs text-zinc-400 hover:bg-zinc-700 w-full text-left"
+      >
+        <span>{icon}</span>
+        <span className="flex-1 truncate">{toolLabel(event)}</span>
+        <span className="text-zinc-500 text-[10px]">{expanded ? '\u25BE' : '\u25B8'}</span>
+      </button>
+      {expanded && (
+        <pre className="mt-0.5 px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-500 font-mono overflow-x-auto max-h-24 overflow-y-auto">
+          {JSON.stringify(isCall ? event.args : event.result, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function ReferenceBadge({ fileRef, onClick }: { fileRef: FileRef; onClick?: Props['onReferenceClick'] }) {
+  const label = fileRef.startLine
+    ? `${fileRef.file}:${fileRef.startLine}:${fileRef.endLine}`
+    : fileRef.file;
+  return (
+    <button
+      onClick={() => onClick?.(fileRef.file, fileRef.startLine, fileRef.endLine)}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-900/40 border border-blue-700/50 rounded text-blue-400 text-xs hover:bg-blue-800/40"
+    >
+      [{label}]
+    </button>
+  );
+}
+
+function ToolEventsList({ events }: { events: ToolEvent[] }) {
+  // Pair tool-call and tool-result by toolName sequence: show only the call card
+  // but mark it as completed if a matching result follows
+  return (
+    <div className="mb-2 space-y-0.5">
+      {events.map((evt, i) => (
+        <ToolEventCard key={i} event={evt} />
+      ))}
     </div>
   );
 }
@@ -67,7 +135,10 @@ export default function ChatPanel({
   messages,
   streaming,
   streamingText,
+  streamingToolEvents,
   selection,
+  pendingAsk,
+  onClearPendingAsk,
   onSend,
   onClearSelection,
   getReference,
@@ -75,10 +146,17 @@ export default function ChatPanel({
 }: Props) {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingText]);
+  }, [messages, streamingText, streamingToolEvents]);
+
+  useEffect(() => {
+    if (pendingAsk) {
+      inputRef.current?.focus();
+    }
+  }, [pendingAsk]);
 
   const handleSubmit = () => {
     const text = input.trim();
@@ -91,6 +169,7 @@ export default function ChatPanel({
     onSend(msg, refs);
     setInput('');
     onClearSelection();
+    onClearPendingAsk?.();
   };
 
   return (
@@ -113,22 +192,49 @@ export default function ChatPanel({
                   : 'bg-zinc-800 text-zinc-200'
               }`}
             >
-              <div className="prose prose-invert prose-sm max-w-none">
-                <MessageContent content={msg.content} onRefClick={onReferenceClick} />
-              </div>
+              {/* User reference badges */}
+              {msg.role === 'user' && msg.references && msg.references.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {msg.references.map((r, i) => (
+                    <ReferenceBadge key={i} fileRef={r} onClick={onReferenceClick} />
+                  ))}
+                </div>
+              )}
+
+              {/* Tool events for assistant messages */}
+              {msg.role === 'assistant' && msg.toolEvents && msg.toolEvents.length > 0 && (
+                <ToolEventsList events={msg.toolEvents} />
+              )}
+
+              {/* Message content */}
+              {msg.content && (
+                <div className="prose prose-invert prose-sm max-w-none">
+                  <MessageContent content={msg.content} onRefClick={onReferenceClick} />
+                </div>
+              )}
             </div>
           </div>
         ))}
-        {streaming && streamingText && (
+
+        {/* Streaming assistant message */}
+        {streaming && (streamingText || streamingToolEvents.length > 0) && (
           <div className="flex justify-start">
             <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
-              <div className="prose prose-invert prose-sm max-w-none">
-                <ReactMarkdown>{streamingText}</ReactMarkdown>
-              </div>
+              {streamingToolEvents.length > 0 && (
+                <ToolEventsList events={streamingToolEvents} />
+              )}
+              {streamingText && (
+                <div className="prose prose-invert prose-sm max-w-none">
+                  <ReactMarkdown>{streamingText}</ReactMarkdown>
+                </div>
+              )}
+              {!streamingText && (
+                <span className="text-zinc-400 animate-pulse">...</span>
+              )}
             </div>
           </div>
         )}
-        {streaming && !streamingText && (
+        {streaming && !streamingText && streamingToolEvents.length === 0 && (
           <div className="flex justify-start">
             <div className="px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
               <span className="animate-pulse">思考中...</span>
@@ -138,14 +244,18 @@ export default function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      {/* Selection badge */}
-      {selection && (
+      {/* Selection / pending ask badge */}
+      {(selection || pendingAsk) && (
         <div className="px-4 py-1.5 border-t border-zinc-800 flex items-center gap-2 bg-zinc-900">
-          <span className="text-xs text-blue-400 bg-blue-900/30 border border-blue-700/50 px-2 py-0.5 rounded">
-            📎 {getReference()}
+          {selection && (
+            <span className="text-xs text-blue-400 bg-blue-900/30 border border-blue-700/50 px-2 py-0.5 rounded">
+              {getReference()}
+            </span>
+          )}
+          <span className="text-xs text-zinc-500 truncate flex-1">
+            "{(selection?.text ?? pendingAsk ?? '').slice(0, 80)}{(selection?.text ?? pendingAsk ?? '').length > 80 ? '...' : ''}"
           </span>
-          <span className="text-xs text-zinc-500 truncate flex-1">"{selection.text.slice(0, 60)}..."</span>
-          <button onClick={onClearSelection} className="text-zinc-500 hover:text-zinc-300 text-xs">✕</button>
+          <button onClick={() => { onClearSelection(); onClearPendingAsk?.(); }} className="text-zinc-500 hover:text-zinc-300 text-xs">&times;</button>
         </div>
       )}
 
@@ -153,6 +263,7 @@ export default function ChatPanel({
       <div className="px-4 py-3 border-t border-zinc-800">
         <div className="flex gap-2">
           <textarea
+            ref={inputRef}
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}

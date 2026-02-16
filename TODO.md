@@ -1,6 +1,6 @@
 # 待完成需求
 
-## 当前已实现
+## 已完成
 
 - [x] 多附件 chips（文件引用 + 引用文本），显示在输入框上方
 - [x] 智能粘贴：从编辑器复制 → 粘贴到聊天自动创建文件引用 chip
@@ -8,10 +8,17 @@
 - [x] 文件类型不限于 `.md`，支持任意扩展名
 - [x] 工具调用事件在聊天中可视化（可展开查看参数/结果）
 - [x] Session 切换（← Sessions 返回按钮）
+- [x] P3: 所有文件允许编辑和删除
+- [x] P4: Markdown GFM 表格渲染（remark-gfm）
+- [x] P6: 发送按钮禁用态样式区分 + 停止按钮
+- [x] P14: ESLint + Prettier 配置
+- [x] Landing Page 重构：侧栏 + 仪表盘布局，Settings 模态框（Profile / System Prompt / LLM）
 
 ---
 
-## P1: 面板自由拖拽调整大小
+## Tier 1: 体验基础（直接影响日常使用）
+
+### 面板自由拖拽调整大小
 
 **现状：** 文件树 `w-52`、聊天面板 `w-96` 均为固定宽度，编辑器占剩余空间。里程碑栏高度由内容撑开。
 
@@ -26,7 +33,7 @@
 
 ---
 
-## P2: 里程碑栏折叠 + 进度条
+### 里程碑栏折叠 + 进度条
 
 **现状：** MilestoneBar 始终展开显示所有里程碑 pill，无法收起。
 
@@ -40,33 +47,7 @@
 
 ---
 
-## P3: 所有文件允许编辑
-
-**现状：** `guidance.md`、`ground-truth.md`、`milestones.md` 被 `isSystemFile` 标记为只读，不显示 Edit 按钮。
-
-**目标：** 移除系统文件限制，所有文件均可编辑。
-
-**工程要点：**
-- MarkdownEditor 中删除 `isSystemFile` 判断，统一显示 Edit/Save/Cancel
-- 可选：编辑系统文件时显示警告（"此文件由 Teacher 管理，手动修改可能被覆盖"）
-
----
-
-## P4: Markdown 表格渲染
-
-**现状：** ReactMarkdown 默认不渲染 GFM 表格，表格显示为无样式 HTML 或纯文本。
-
-**目标：** 编辑器预览和聊天消息中正确渲染表格，带边框、对齐、条纹行。
-
-**工程要点：**
-- 安装 `remark-gfm`，配置 `<ReactMarkdown remarkPlugins={[remarkGfm]}>`
-- Tailwind `prose` class 已包含基础表格样式，启用 remark-gfm 后应自动生效
-- 需在 MarkdownEditor 和 ChatPanel 的 `MessageContent` 两处统一配置
-- 附带获得 GFM 能力：删除线、任务列表复选框、自动链接
-
----
-
-## P5: LLM Provider 可配置 + 文件化
+### LLM Provider 可配置 + 运行时切换
 
 **现状：** LLM 配置通过 `.env` 环境变量（`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`），修改需重启服务。
 
@@ -81,22 +62,21 @@
 
 ---
 
-## P6: 发送按钮禁用态样式区分
+### SSE 流中断恢复 + 消息重试
 
-**现状：** 发送按钮禁用时仅 `opacity-40 cursor-not-allowed`，无法区分「正在流式输出」和「输入为空」。
+**现状：** SSE 流断开后无恢复机制，消息发送失败无重试 UI，用户只能刷新页面。
 
-**目标：**
-- 输入为空 → 灰色低透明度（当前样式）
-- 流式输出中 → 变为「停止」按钮（红色/方块图标），点击中断流
+**目标：** 流式传输中断时自动重连或提示用户重试；发送失败的消息显示重试按钮。
 
 **工程要点：**
-- ChatPanel 发送按钮根据 `streaming` vs `!input.trim()` 渲染不同 UI
-- 流式中显示 Stop 按钮，需从 props 新增 `onStop` 回调
-- `useSession` 暴露 `stopStreaming()` 方法（调用 AbortController.abort）
+- `useSession` 的 SSE 消费逻辑添加错误处理：网络断开 vs 服务端错误区分
+- 失败消息在 UI 上标红 + 显示"重试"按钮，点击重新发送
+- 可选：流中断后从最后一个 `text-delta` 断点续传（需服务端支持 event ID）
+- 基础方案先做"重试整条消息"，断点续传作为进阶
 
 ---
 
-## P7: 长文本编辑流式显示 / Writing 状态
+### Writing 状态指示
 
 **现状：** Agent 通过 `write_file` 写入后，客户端一次性刷新。大文件写入期间编辑器无反馈。
 
@@ -109,38 +89,25 @@
 
 ---
 
-## P8: 内联引用 chips
+## Tier 2: 上下文编排（项目核心差异化）
 
-**现状：** chips 集中出现在 textarea 上方，与文本输入分离。
+### System Prompt 文件化 + 可编辑 `[部分完成]`
 
-**目标：** 像 Cursor 一样，引用 chip 与普通文字混排在同一个输入区域内。
+**现状：** Landing Page 已有 System Prompt 编辑模态框，可读写 `data/system-prompt.md`，默认提示词显示为 placeholder。
 
-**工程要点：**
-- `<textarea>` 无法渲染 HTML 节点，需替换为 `contentEditable` 或富文本编辑器库
-- 候选方案：TipTap（ProseMirror）、Slate.js
-- 需处理：光标定位、chip 插入/删除/键盘导航、内容序列化（chip → `[file:start:end]`）
-- ChatPanel 输入区域重写 + 新增依赖
+**剩余：** `getSystemPrompt()` 尚未改为优先读取文件——当前自定义 prompt 保存了但 LLM 调用时未使用。
 
----
-
-## P9: 多行选中 → 文件引用
-
-**现状：** `content.indexOf(selectedText)` 匹配原文行号，多行或含格式的选中文本无法匹配（渲染文本 ≠ 源码）。
-
-**目标：** 选中编辑器中任意多行内容，"Add to Chat" 后正确识别源文件行号范围。
-
-**工程要点：**
-- 自定义 ReactMarkdown renderer，注入 `data-source-line` 属性
-- 从 DOM Selection 的 anchorNode/focusNode 读取行号反推范围
-- 智能粘贴路径不受影响，已可处理多行
+**待做：**
+- `llm.ts` 的 `streamTeacherResponse` 改为：优先读取 `data/system-prompt.md`，不存在时 fallback 到内置默认
+- 可选：支持 session 级别的 system prompt 覆盖（`data/{sessionId}/system-prompt.md`）
 
 ---
 
-## P10: 用户上下文 Profile 文件化
+### 用户 Profile 分块 + 选择性注入
 
-**现状：** 无用户个人上下文机制。Teacher Agent 对学生背景一无所知，每次对话从零开始。
+**现状：** 有 `data/profile.md` 和基础的读写 API，但内容整体注入，无分块选择机制。
 
-**目标：** 用户上下文存储为可编辑文件（如 `data/profile.md`），内容自由定义——学习目标、身份职业、年龄、文化背景等，不预设任何字段。文件按结构化标记分块，用户可选择哪些块传给模型。
+**目标：** Profile 文件按标题分块，用户可按需勾选哪些块传给模型。不同 session 可选择不同子集。
 
 **文件格式示例：**
 ```markdown
@@ -157,28 +124,116 @@
 喜欢通过实际例子和类比学习，不喜欢纯理论推导
 ```
 
-或 XML 标签格式：
-```xml
-<context name="基本信息">
-25岁，计算机专业研究生
-</context>
-
-<context name="学习目标">
-深入理解分布式系统原理，准备面试
-</context>
-```
-
 **工程要点：**
-- 解析器：支持 `# 标题` 或 `<context name="...">` 两种分块方式，每块提取为 `{ name, content }` 对象
+- 解析器：按 `# 标题` 分块，每块提取为 `{ name, content }` 对象
 - 服务端：读取 profile 文件 → 解析分块 → 注入 system prompt（全部或用户选择的子集）
-- 客户端：Profile 编辑页面（本质就是打开 profile 文件编辑）+ 块选择 UI（勾选哪些块本次生效）
-- API：`GET/PUT /api/profile` 读写文件；`GET /api/profile/blocks` 返回解析后的块列表
-- 块选择状态可存为 session 级别配置（不同 session 可选不同子集）
+- 客户端：Profile 编辑页面 + 块选择 UI（勾选哪些块本次生效）
+- API：`GET /api/profile/blocks` 返回解析后的块列表
+- 块选择状态存为 session 级别配置
 - 当前已有 `getProfile` / `updateProfile` API 端点，可复用扩展
 
 ---
 
-## P11: Electron 桌面应用 + 移动端
+### 多行选中 → 文件引用（行号精确映射）
+
+**现状：** `content.indexOf(selectedText)` 匹配原文行号，多行或含格式的选中文本无法匹配（渲染文本 ≠ 源码）。
+
+**目标：** 选中编辑器中任意多行内容，"Add to Chat" 后正确识别源文件行号范围。
+
+**工程要点：**
+- 自定义 ReactMarkdown renderer，注入 `data-source-line` 属性
+- 从 DOM Selection 的 anchorNode/focusNode 读取行号反推范围
+- 智能粘贴路径不受影响，已可处理多行
+
+---
+
+## Tier 3: Agent 能力扩展
+
+### Teacher Agent 互联网搜索工具
+
+**现状：** Teacher Agent 仅依赖 LLM 内置知识，无法获取最新信息或前沿知识。
+
+**目标：** Agent 具备联网搜索能力，可检索最新论文、技术文档、新闻等，将搜索结果纳入教学内容。
+
+**工程要点：**
+- 新增 `web_search` 工具定义（Zod schema），加入 `buildTools()` 工具集
+- 搜索后端：调用搜索 API（Google Custom Search / Bing / SearXNG 自建）
+- 结果处理：搜索结果摘要提取 → 传回 LLM 作为上下文
+- 可选 `fetch_url` 工具：抓取指定 URL 内容（带 HTML→markdown 转换）
+- system prompt 增加搜索使用指引：何时搜索、如何引用来源
+- 速率限制和缓存：防止 Agent 过度搜索
+- 搜索结果可写入 session 文件（如 `references/`），成为可编辑的上下文文件
+
+---
+
+### 多 Session 间共享文件 / 跨 Session 引用
+
+**现状：** 每个 session 的文件完全隔离，学习同一大主题的多个 session 无法复用已有材料。
+
+**目标：** 支持跨 session 引用文件，或维护一个全局共享文件区。
+
+**工程要点：**
+- 方案 A：全局文件区 `data/shared/`，所有 session 可读写，文件树中单独展示
+- 方案 B：引用协议扩展 `[session:sessionId/file:start:end]`，可引用其他 session 的文件（只读）
+- 方案 A 更简单实用，优先考虑
+- FileService 需支持多根目录（session 目录 + shared 目录）
+- 文件树 UI 分组显示：Session 文件 / 共享文件
+
+---
+
+### 导出功能
+
+**现状：** 学习材料只能在应用内查看，无法导出复习或分享。
+
+**目标：** 将一个 session 的学习材料导出为完整文档（合并 markdown / PDF）。
+
+**工程要点：**
+- 基础方案：将 session 内所有 `.md` 文件按顺序合并为单个 markdown 文件下载
+- 进阶方案：服务端使用 `markdown-pdf` 或 `puppeteer` 生成 PDF
+- 可选包含聊天记录摘要（Agent 对话中的关键知识点提取）
+- API：`GET /api/session/:id/export?format=md|pdf`
+- 客户端：Session 详情页或 Header 添加导出按钮
+
+---
+
+## Tier 4: 交互进阶（工作量大，当前方案够用）
+
+### 内联引用 chips
+
+**现状：** chips 集中出现在 textarea 上方，与文本输入分离。
+
+**目标：** 像 Cursor 一样，引用 chip 与普通文字混排在同一个输入区域内。
+
+**工程要点：**
+- `<textarea>` 无法渲染 HTML 节点，需替换为 `contentEditable` 或富文本编辑器库
+- 候选方案：TipTap（ProseMirror）、Slate.js
+- 需处理：光标定位、chip 插入/删除/键盘导航、内容序列化（chip → `[file:start:end]`）
+- ChatPanel 输入区域重写 + 新增依赖
+
+---
+
+### 聊天历史文件化 + Fork
+
+**理念：** "Everything is a file"——聊天记录是可编辑文件，非只读消息流。
+
+**目标：**
+- 聊天历史以文件形式存储（`chat.md` 或 `conversation.jsonl`），可在编辑器中编辑
+- 支持 fork：从某条消息分叉出新对话分支
+- 支持复制：将一段对话复制为独立笔记文件
+- 引用指向文件行号，编辑后仍能定位（或标记 stale）
+
+**工程要点：**
+- 设计序列化格式（兼顾可读性和机器解析）
+- fork/branch 模型：树状对话结构 vs 扁平文件复制
+- 引用稳定性：文件修改后行号偏移处理
+- `messages.json` 迁移或兼容
+- 复杂度高，建议等核心功能稳定后再做
+
+---
+
+## Tier 5: 平台化（功能稳定后再考虑）
+
+### Electron 桌面应用 + 移动端
 
 **现状：** 纯 Web 应用，Vite dev server + Express 后端，浏览器访问。
 
@@ -199,54 +254,47 @@
 - 离线支持：SQLite 本地存储替代 JSON 文件，Service Worker 缓存
 - 数据同步：如需多端同步，需设计同步协议（CouchDB/CRDT/云端存储）
 
----
-
-## P12: 聊天历史文件化
-
-**理念：** "Everything is a file"——聊天记录是可编辑文件，非只读消息流。
-
-**目标：**
-- 聊天历史以文件形式存储（`chat.md` 或 `conversation.jsonl`），可在编辑器中编辑
-- 支持 fork：从某条消息分叉出新对话分支
-- 支持复制：将一段对话复制为独立笔记文件
-- 引用指向文件行号，编辑后仍能定位（或标记 stale）
-
-**工程要点：**
-- 设计序列化格式（兼顾可读性和机器解析）
-- fork/branch 模型：树状对话结构 vs 扁平文件复制
-- 引用稳定性：文件修改后行号偏移处理
-- `messages.json` 迁移或兼容
+**前置条件：** 功能趋于稳定，不再频繁改动核心架构。过早打包会拖慢迭代。
 
 ---
 
-## P13: Teacher Agent 互联网搜索工具
+## 架构备忘
 
-**现状：** Teacher Agent 仅依赖 LLM 内置知识，无法获取最新信息或前沿知识。
+以下不是独立需求，而是随项目演进需持续关注的架构问题：
 
-**目标：** Agent 具备联网搜索能力，可检索最新论文、技术文档、新闻等，将搜索结果纳入教学内容。
-
-**工程要点：**
-- 新增 `web_search` 工具定义（Zod schema），加入 `buildTools()` 工具集
-- 搜索后端：调用搜索 API（Google Custom Search / Bing / SearXNG 自建）
-- 结果处理：搜索结果摘要提取 → 传回 LLM 作为上下文
-- 可选 `fetch_url` 工具：抓取指定 URL 内容（带 HTML→markdown 转换）
-- system prompt 增加搜索使用指引：何时搜索、如何引用来源
-- 速率限制和缓存：防止 Agent 过度搜索
-- 搜索结果可写入 session 文件（如 `references/`），成为可编辑的上下文文件
+- **存储层抽象**：当前 JSON 文件存储无锁无并发。单用户没问题，但多端同步（Electron + 移动端）前需要抽象存储接口（Store interface），方便后续切换到 SQLite 或云端存储。不需要现在就做，但新增存储逻辑时注意不要过度耦合 JSON 文件实现。
+- **客户端测试**：CLAUDE.md 要求 TDD，但客户端零测试。随着 Tier 1（面板拖拽）、Tier 4（内联 chips）等交互复杂功能的加入，缺少测试会越来越痛苦。建议在实现新的客户端功能时同步补测试，不需要补历史债。
+- **性能**：当前无明显瓶颈，但 session 文件数量增长后文件列表 API 可能变慢（`fs.readdir` + `stat`）。大量消息的 `messages.json` 全量读写也是潜在问题。留意，按需优化。
 
 ---
 
-## P14: 配置 ESLint + Prettier
+## 依赖关系
 
-**现状：** 无 linter 或 formatter，代码风格全靠人工保持一致。
+```
+独立任务（可并行）:
+  面板拖拽调整大小
+  里程碑栏折叠 + 进度条
+  SSE 流中断恢复 + 消息重试
+  Writing 状态指示
+  多行选中 → 文件引用
 
-**目标：** 根目录统一配置 ESLint + Prettier，两个包共享规则。提交前自动检查。
+有依赖链:
+  System Prompt 文件化 [部分完成]
+    └→ LLM Provider 运行时切换（需 system prompt 文件化作为基础）
 
-**工程要点：**
-- ESLint：使用 flat config（`eslint.config.js`），启用 `@typescript-eslint` 规则集
-- Prettier：`.prettierrc` 配置（单引号、无分号、2 空格缩进等，与现有代码风格匹配）
-- 根目录 `package.json` 添加 `lint` / `format` / `lint:fix` scripts
-- `lint-staged` + `husky`：git commit 时自动对 staged 文件执行 lint + format
-- 首次配置需一次性格式化全量代码（单独一个 commit：`chore: format codebase`）
-- 确保 ESLint 与 Prettier 不冲突（`eslint-config-prettier` 关闭冲突规则）
-- React 相关规则：`eslint-plugin-react-hooks`（enforce rules of hooks）
+  用户 Profile 分块 + 选择性注入
+    └→ 依赖现有 profile API（已有）
+
+  Teacher Agent 互联网搜索
+    └→ 导出功能（搜索结果可纳入导出）
+
+  内联引用 chips（Tier 4）
+    └→ 需先稳定 多行选中 → 文件引用（Tier 2）
+
+  聊天历史文件化 + Fork（Tier 4）
+    └→ 多 Session 间共享文件 / 跨 Session 引用（Tier 3）
+
+  Electron 桌面应用（Tier 5）
+    └→ blocked by: 存储层抽象
+    └→ blocked by: 功能趋于稳定
+```

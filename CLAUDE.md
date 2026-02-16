@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Teacher Agent Notebook — an AI-powered educational tool where a Teacher Agent creates structured learning materials (guidance.md, ground-truth.md, milestones.md) and interactively tutors students through chat. Three-panel UI: file tree, markdown editor, chat panel.
 
+## 发展方向：上下文编排器 (Context Orchestrator)
+
+本应用的核心演进方向是成为一个**上下文编排器**——让人和 Agent 都能灵活、自由地构建、编辑、选择传入给模型的上下文。
+
+关键理念：
+- **Everything is a file**：所有上下文（学习材料、用户 profile、聊天历史）均以文件形式存在，可编辑、可引用、可 fork
+- **人机双向编排**：用户可以手动选择/编辑上下文片段传给 Agent；Agent 也可以主动读取/创建/组织上下文文件
+- **分块与选择**：上下文文件按标题或标签分块，用户可按需勾选哪些块参与当前对话
+- **引用即定位**：`[file:startLine:endLine]` 引用体系贯穿编辑器和聊天，精确关联上下文来源
+
 ## Commands
 
 ```bash
@@ -61,4 +71,13 @@ Tests live in `packages/server/__tests__/`. No client-side tests exist yet.
 - TypeScript strict mode, ES2022 target, ESNext modules throughout
 - Vercel AI SDK v6: uses `ModelMessage` (not CoreMessage), `inputSchema` (not parameters), `stopWhen` (not maxSteps), `part.input`/`part.output` (not args/result), `part.text` (not textDelta)
 - Agent layer is decoupled via optional types: `ToolEvent`, `toolEvents` on `ChatMessage` are `?` optional — absent when LLM is not configured
-- No linter or formatter configured
+- Lint: ESLint (flat config `eslint.config.js`)，Format: Prettier (`.prettierrc`)。根目录统一配置，两个包共享
+- 运行 `npm run lint` 检查，`npm run format` 格式化。提交前必须通过 lint
+
+### 开发规范
+
+- **TDD（测试驱动开发）**：先写测试，再写实现，确保每个功能有对应测试覆盖。服务端测试在 `packages/server/__tests__/`，使用 vitest
+- **全栈类型安全**：服务端 `types.ts` 定义的类型需与客户端 `api/client.ts` 的类型保持同步。接口变更必须同时更新两端类型，确保端到端 type-safe
+- **分支开发**：每个新功能从 `main` 新建 feature 分支（如 `feature/resize-panels`），开发完成后由用户审核再合入 main
+- **小步提交**：每个有意义的变更单独提交，commit message 清晰描述变更内容。避免大型混合提交
+- **合入流程**：功能完成 → 运行 `npm test` 确保全部通过 → 两端 `tsc --noEmit` 无类型错误 → 用户审核 → 合入 main

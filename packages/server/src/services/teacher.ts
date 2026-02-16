@@ -33,7 +33,8 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'write_file',
-      description: 'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
+      description:
+        'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
       parameters: {
         type: 'object',
         properties: {

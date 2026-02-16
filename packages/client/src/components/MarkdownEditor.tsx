@@ -7,9 +7,10 @@ interface Props {
   readOnly?: boolean;
   onSave?: (content: string) => void;
   onMouseUp?: () => void;
+  onCopy?: () => void;
 }
 
-export default function MarkdownEditor({ fileName, content, readOnly, onSave, onMouseUp }: Props) {
+export default function MarkdownEditor({ fileName, content, readOnly, onSave, onMouseUp, onCopy }: Props) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
 
@@ -41,7 +42,10 @@ export default function MarkdownEditor({ fileName, content, readOnly, onSave, on
                     Save
                   </button>
                   <button
-                    onClick={() => { setEditing(false); setEditContent(content); }}
+                    onClick={() => {
+                      setEditing(false);
+                      setEditContent(content);
+                    }}
                     className="px-2 py-0.5 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded"
                   >
                     Cancel
@@ -59,7 +63,7 @@ export default function MarkdownEditor({ fileName, content, readOnly, onSave, on
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto" onMouseUp={onMouseUp}>
+      <div className="flex-1 overflow-y-auto" onMouseUp={onMouseUp} onCopy={onCopy}>
         {editing ? (
           <textarea
             value={editContent}

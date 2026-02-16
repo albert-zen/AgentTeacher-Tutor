@@ -116,7 +116,7 @@ function listFilesRecursive(baseDir: string, relDir: string): string[] {
     const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       files.push(...listFilesRecursive(baseDir, relPath));
-    } else if (entry.name.endsWith('.md')) {
+    } else if (entry.name !== 'messages.json' && !entry.name.startsWith('.')) {
       files.push(relPath);
     }
   }

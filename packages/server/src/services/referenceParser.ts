@@ -4,7 +4,7 @@ export interface FileReference {
   endLine?: number;
 }
 
-const REFERENCE_REGEX = /\[([^.[\]:]+\.md)(?::(\d+):(\d+))?\]/g;
+const REFERENCE_REGEX = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g;
 
 export function parseReferences(text: string): FileReference[] {
   const refs: FileReference[] = [];
@@ -21,10 +21,7 @@ export function parseReferences(text: string): FileReference[] {
 }
 
 export function generateReference(ref: FileReference): string {
-  if (
-    ref.startLine !== undefined &&
-    ref.endLine !== undefined
-  ) {
+  if (ref.startLine !== undefined && ref.endLine !== undefined) {
     return `[${ref.file}:${ref.startLine}:${ref.endLine}]`;
   }
   return `[${ref.file}]`;

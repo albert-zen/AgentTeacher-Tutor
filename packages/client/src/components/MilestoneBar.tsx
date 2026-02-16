@@ -30,7 +30,9 @@ export default function MilestoneBar({ content }: Props) {
     <div className="px-4 py-3 bg-zinc-900 border-b border-zinc-700">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-medium text-zinc-300">{title || '学习进度'}</span>
-        <span className="text-xs text-zinc-500">{completed}/{items.length}</span>
+        <span className="text-xs text-zinc-500">
+          {completed}/{items.length}
+        </span>
       </div>
       <div className="flex gap-1.5 flex-wrap">
         {items.map((item) => (

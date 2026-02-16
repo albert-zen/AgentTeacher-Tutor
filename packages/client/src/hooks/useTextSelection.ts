@@ -10,28 +10,24 @@ export interface TextSelection {
 export function useTextSelection() {
   const [selection, setSelection] = useState<TextSelection | null>(null);
 
-  const handleSelection = useCallback((fileName: string, content: string) => {
+  /** Try to map the current DOM selection to a file range. Returns the result synchronously. */
+  const handleSelection = useCallback((fileName: string, content: string): TextSelection | null => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      return;
+      return null;
     }
 
     const selectedText = sel.toString().trim();
-    const lines = content.split('\n');
-    const fullText = content;
-    const selStart = fullText.indexOf(selectedText);
-    if (selStart === -1) return;
+    const selStart = content.indexOf(selectedText);
+    if (selStart === -1) return null;
 
-    const beforeSel = fullText.slice(0, selStart);
+    const beforeSel = content.slice(0, selStart);
     const startLine = beforeSel.split('\n').length;
     const endLine = startLine + selectedText.split('\n').length - 1;
 
-    setSelection({
-      text: selectedText,
-      fileName,
-      startLine,
-      endLine,
-    });
+    const result: TextSelection = { text: selectedText, fileName, startLine, endLine };
+    setSelection(result);
+    return result;
   }, []);
 
   const clearSelection = useCallback(() => setSelection(null), []);

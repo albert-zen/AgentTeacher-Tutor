@@ -39,7 +39,8 @@ export function buildTools(fileService: FileService) {
       },
     }),
     write_file: tool({
-      description: 'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
+      description:
+        'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
       inputSchema: z.object({
         path: z.string().describe('Relative file path'),
         content: z.string().describe('Content to write'),

@@ -86,22 +86,28 @@ export function useSession() {
     [refreshFilesBySessionId],
   );
 
-  const startSession = useCallback(async (concept: string) => {
-    const sess = await api.createSession(concept);
-    setSession(sess);
-    sessionRef.current = sess;
-    setMessages([]);
-    setFiles([]);
-    sendMessage(sess.id, `我想学习：${concept}`, []);
-  }, [sendMessage]);
+  const startSession = useCallback(
+    async (concept: string) => {
+      const sess = await api.createSession(concept);
+      setSession(sess);
+      sessionRef.current = sess;
+      setMessages([]);
+      setFiles([]);
+      sendMessage(sess.id, `我想学习：${concept}`, []);
+    },
+    [sendMessage],
+  );
 
-  const loadSession = useCallback(async (id: string) => {
-    const data = await api.getSession(id);
-    setSession(data.session);
-    sessionRef.current = data.session;
-    setMessages(data.messages);
-    await refreshFilesBySessionId(id);
-  }, [refreshFilesBySessionId]);
+  const loadSession = useCallback(
+    async (id: string) => {
+      const data = await api.getSession(id);
+      setSession(data.session);
+      sessionRef.current = data.session;
+      setMessages(data.messages);
+      await refreshFilesBySessionId(id);
+    },
+    [refreshFilesBySessionId],
+  );
 
   const send = useCallback(
     (message: string, references: api.FileRef[] = []) => {

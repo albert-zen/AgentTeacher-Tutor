@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import FileTree from './components/FileTree';
 import MarkdownEditor from './components/MarkdownEditor';
 import ChatPanel from './components/ChatPanel';
@@ -7,24 +7,72 @@ import SelectionPopup from './components/SelectionPopup';
 import { useSession } from './hooks/useSession';
 import { useTextSelection } from './hooks/useTextSelection';
 import * as api from './api/client';
+import type { Attachment, CopySource } from './api/client';
 
 export default function App() {
-  const { session, messages, files, streaming, streamingParts, startSession, loadSession, clearSession, send, refreshFiles } = useSession();
-  const { selection, handleSelection, clearSelection, getReference } = useTextSelection();
+  const {
+    session,
+    messages,
+    files,
+    streaming,
+    streamingParts,
+    startSession,
+    loadSession,
+    clearSession,
+    send,
+    refreshFiles,
+  } = useSession();
+  const { handleSelection } = useTextSelection();
 
   const [conceptInput, setConceptInput] = useState('');
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [pastSessions, setPastSessions] = useState<api.Session[]>([]);
-  const [pendingAsk, setPendingAsk] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [milestonesContent, setMilestonesContent] = useState('');
+
+  // Attachments (file refs + quotes) for the chat input
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const copySourceRef = useRef<CopySource | null>(null);
+
+  const addAttachment = useCallback((att: Attachment) => {
+    setAttachments((prev) => [...prev, att]);
+  }, []);
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const clearAttachments = useCallback(() => {
+    setAttachments([]);
+  }, []);
+
+  // Track copy source when copying from the editor
+  const handleEditorCopy = useCallback(() => {
+    if (!activeFile) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const selectedText = sel.toString().trim();
+    if (!selectedText) return;
+
+    const selStart = fileContent.indexOf(selectedText);
+    if (selStart === -1) return;
+
+    const beforeSel = fileContent.slice(0, selStart);
+    const startLine = beforeSel.split('\n').length;
+    const endLine = startLine + selectedText.split('\n').length - 1;
+
+    copySourceRef.current = { file: activeFile, startLine, endLine, text: selectedText };
+  }, [activeFile, fileContent]);
 
   // Load file content when active file changes
   useEffect(() => {
     if (!session || !activeFile) return;
-    api.readFile(session.id, activeFile).then((res) => {
-      setFileContent(res.content);
-    }).catch(() => setFileContent(''));
+    api
+      .readFile(session.id, activeFile)
+      .then((res) => {
+        setFileContent(res.content);
+      })
+      .catch(() => setFileContent(''));
   }, [session, activeFile]);
 
   // Auto-select guidance.md when files change
@@ -38,17 +86,23 @@ export default function App() {
   // Load milestones whenever files refresh
   useEffect(() => {
     if (!session || !files.includes('milestones.md')) return;
-    api.readFile(session.id, 'milestones.md').then((res) => {
-      setMilestonesContent(res.content);
-    }).catch(() => {});
+    api
+      .readFile(session.id, 'milestones.md')
+      .then((res) => {
+        setMilestonesContent(res.content);
+      })
+      .catch(() => {});
   }, [session, files]);
 
   // Reload active file content when files list changes (Teacher may have updated it)
   useEffect(() => {
     if (!session || !activeFile || !files.includes(activeFile)) return;
-    api.readFile(session.id, activeFile).then((res) => {
-      setFileContent(res.content);
-    }).catch(() => {});
+    api
+      .readFile(session.id, activeFile)
+      .then((res) => {
+        setFileContent(res.content);
+      })
+      .catch(() => {});
   }, [files]);
 
   const handleStart = () => {
@@ -58,36 +112,51 @@ export default function App() {
     setConceptInput('');
   };
 
-  const handleCreateFile = useCallback(async (name: string) => {
-    if (!session) return;
-    await api.writeFile(session.id, name, `# ${name.replace('.md', '')}\n\n`);
-    refreshFiles();
-    setActiveFile(name);
-  }, [session, refreshFiles]);
+  const handleCreateFile = useCallback(
+    async (name: string) => {
+      if (!session) return;
+      await api.writeFile(session.id, name, `# ${name.replace('.md', '')}\n\n`);
+      refreshFiles();
+      setActiveFile(name);
+    },
+    [session, refreshFiles],
+  );
 
-  const handleDeleteFile = useCallback(async (name: string) => {
-    if (!session) return;
-    await api.deleteFile(session.id, name);
-    if (activeFile === name) setActiveFile(null);
-    refreshFiles();
-  }, [session, activeFile, refreshFiles]);
+  const handleDeleteFile = useCallback(
+    async (name: string) => {
+      if (!session) return;
+      await api.deleteFile(session.id, name);
+      if (activeFile === name) setActiveFile(null);
+      refreshFiles();
+    },
+    [session, activeFile, refreshFiles],
+  );
 
-  const handleSaveFile = useCallback(async (content: string) => {
-    if (!session || !activeFile) return;
-    await api.writeFile(session.id, activeFile, content);
-    setFileContent(content);
-  }, [session, activeFile]);
+  const handleSaveFile = useCallback(
+    async (content: string) => {
+      if (!session || !activeFile) return;
+      await api.writeFile(session.id, activeFile, content);
+      setFileContent(content);
+    },
+    [session, activeFile],
+  );
 
-  const handleReferenceClick = useCallback((file: string) => {
-    if (files.includes(file)) {
-      setActiveFile(file);
-    }
-  }, [files]);
+  const handleReferenceClick = useCallback(
+    (file: string) => {
+      if (files.includes(file)) {
+        setActiveFile(file);
+      }
+    },
+    [files],
+  );
 
   // Load past sessions on mount and when returning to landing page
   useEffect(() => {
     if (!session) {
-      api.getSessions().then(setPastSessions).catch(() => {});
+      api
+        .getSessions()
+        .then(setPastSessions)
+        .catch(() => {});
     }
   }, [session]);
 
@@ -124,18 +193,26 @@ export default function App() {
             <div>
               <p className="text-zinc-500 text-xs uppercase tracking-wide mb-3">继续学习</p>
               <div className="space-y-2">
-                {pastSessions.slice().reverse().map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleLoadSession(s.id)}
-                    className="w-full text-left px-4 py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors"
-                  >
-                    <span className="text-white text-sm">{s.concept}</span>
-                    <span className="text-zinc-600 text-xs ml-2">
-                      {new Date(s.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </button>
-                ))}
+                {pastSessions
+                  .slice()
+                  .reverse()
+                  .map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => handleLoadSession(s.id)}
+                      className="w-full text-left px-4 py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors"
+                    >
+                      <span className="text-white text-sm">{s.concept}</span>
+                      <span className="text-zinc-600 text-xs ml-2">
+                        {new Date(s.createdAt).toLocaleDateString('zh-CN', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </button>
+                  ))}
               </div>
             </div>
           )}
@@ -187,6 +264,7 @@ export default function App() {
                 content={fileContent}
                 onSave={handleSaveFile}
                 onMouseUp={() => handleSelection(activeFile, fileContent)}
+                onCopy={handleEditorCopy}
               />
             </div>
           ) : (
@@ -202,12 +280,12 @@ export default function App() {
             messages={messages}
             streaming={streaming}
             streamingParts={streamingParts}
-            selection={selection}
-            pendingAsk={pendingAsk}
-            onClearPendingAsk={() => setPendingAsk(null)}
+            attachments={attachments}
+            onRemoveAttachment={removeAttachment}
+            onClearAttachments={clearAttachments}
+            onAddAttachment={addAttachment}
+            copySource={copySourceRef}
             onSend={send}
-            onClearSelection={clearSelection}
-            getReference={getReference}
             onReferenceClick={handleReferenceClick}
           />
         </div>
@@ -215,10 +293,19 @@ export default function App() {
 
       <SelectionPopup
         onAsk={(selectedText) => {
-          if (activeFile) {
-            handleSelection(activeFile, fileContent);
+          // Try to map DOM selection to a file reference
+          const fileRef = activeFile ? handleSelection(activeFile, fileContent) : null;
+          if (fileRef) {
+            addAttachment({
+              type: 'file-ref',
+              file: fileRef.fileName,
+              startLine: fileRef.startLine,
+              endLine: fileRef.endLine,
+              preview: selectedText.slice(0, 100),
+            });
+          } else {
+            addAttachment({ type: 'quote', text: selectedText });
           }
-          setPendingAsk(selectedText);
         }}
       />
     </div>

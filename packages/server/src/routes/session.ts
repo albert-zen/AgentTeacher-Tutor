@@ -74,7 +74,9 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
             startLine: ref.startLine,
             endLine: ref.endLine,
           });
-          resolvedParts.push(`--- Referenced: ${ref.file}${ref.startLine ? `:${ref.startLine}:${ref.endLine}` : ''} ---\n${result.content}\n---`);
+          resolvedParts.push(
+            `--- Referenced: ${ref.file}${ref.startLine ? `:${ref.startLine}:${ref.endLine}` : ''} ---\n${result.content}\n---`,
+          );
         } catch {
           // File not found, skip
         }
@@ -132,7 +134,9 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
     res.flushHeaders();
 
     if (!model) {
-      res.write(`data: ${JSON.stringify({ type: 'text-delta', content: '[LLM 未配置] 请在 .env 中设置 LLM_API_KEY 后重启 server。当前可以正常使用文件管理、笔记编辑等功能。' })}\n\n`);
+      res.write(
+        `data: ${JSON.stringify({ type: 'text-delta', content: '[LLM 未配置] 请在 .env 中设置 LLM_API_KEY 后重启 server。当前可以正常使用文件管理、笔记编辑等功能。' })}\n\n`,
+      );
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
       return;
@@ -170,7 +174,9 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
           const toolResult = part.output;
           toolEvents.push({ type: 'tool-result', toolName: part.toolName, result: toolResult });
           parts.push({ type: 'tool-result', toolName: part.toolName, result: toolResult });
-          res.write(`data: ${JSON.stringify({ type: 'tool-result', toolName: part.toolName, result: toolResult })}\n\n`);
+          res.write(
+            `data: ${JSON.stringify({ type: 'tool-result', toolName: part.toolName, result: toolResult })}\n\n`,
+          );
         } else if (part.type === 'reasoning-delta') {
           // GLM-4.7 reasoning tokens - skip, don't send to frontend
         }

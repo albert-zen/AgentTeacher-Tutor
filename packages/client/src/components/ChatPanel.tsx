@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { FileRef, MessagePart } from '../api/client';
-import type { TextSelection } from '../hooks/useTextSelection';
+import type { FileRef, MessagePart, Attachment, CopySource } from '../api/client';
 
 interface Message {
   id: string;
@@ -16,16 +15,16 @@ interface Props {
   messages: Message[];
   streaming: boolean;
   streamingParts: MessagePart[];
-  selection: TextSelection | null;
-  pendingAsk?: string | null;
-  onClearPendingAsk?: () => void;
+  attachments: Attachment[];
+  onRemoveAttachment: (index: number) => void;
+  onClearAttachments: () => void;
+  onAddAttachment: (att: Attachment) => void;
+  copySource: React.RefObject<CopySource | null>;
   onSend: (message: string, references: FileRef[]) => void;
-  onClearSelection: () => void;
-  getReference: () => string;
   onReferenceClick?: (file: string, startLine?: number, endLine?: number) => void;
 }
 
-const REF_REGEX = /\[([^\[\]:]+\.md)(?::(\d+):(\d+))?\]/g;
+const REF_REGEX = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g;
 
 function MessageContent({ content, onRefClick }: { content: string; onRefClick?: Props['onReferenceClick'] }) {
   const parts: (string | { file: string; start?: number; end?: number; raw: string })[] = [];
@@ -68,9 +67,8 @@ function MessageContent({ content, onRefClick }: { content: string; onRefClick?:
 }
 
 function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): string {
-  const path = part.type === 'tool-call'
-    ? (part.args as Record<string, unknown>)?.path as string | undefined
-    : undefined;
+  const path =
+    part.type === 'tool-call' ? ((part.args as Record<string, unknown>)?.path as string | undefined) : undefined;
   if (part.type === 'tool-call') {
     if (part.toolName === 'read_file') return `Reading ${path ?? 'file'}...`;
     if (part.toolName === 'write_file') return `Writing ${path ?? 'file'}...`;
@@ -78,7 +76,7 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
   }
   // tool-result: try to get path from result
   const resultPath = (part.result as Record<string, unknown>)?.data
-    ? ((part.result as Record<string, unknown>).data as Record<string, unknown>)?.path as string | undefined
+    ? (((part.result as Record<string, unknown>).data as Record<string, unknown>)?.path as string | undefined)
     : undefined;
   if (part.toolName === 'read_file') return `Read ${resultPath ?? 'file'}`;
   if (part.toolName === 'write_file') return `Wrote ${resultPath ?? 'file'}`;
@@ -88,9 +86,7 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
 function ToolEventCard({ part }: { part: MessagePart & { type: 'tool-call' | 'tool-result' } }) {
   const [expanded, setExpanded] = useState(false);
   const isCall = part.type === 'tool-call';
-  const icon = isCall
-    ? part.toolName === 'read_file' ? '\u{1F4D6}' : '\u{270F}\u{FE0F}'
-    : '\u2713';
+  const icon = isCall ? (part.toolName === 'read_file' ? '\u{1F4D6}' : '\u{270F}\u{FE0F}') : '\u2713';
 
   return (
     <div className="my-0.5">
@@ -112,9 +108,7 @@ function ToolEventCard({ part }: { part: MessagePart & { type: 'tool-call' | 'to
 }
 
 function ReferenceBadge({ fileRef, onClick }: { fileRef: FileRef; onClick?: Props['onReferenceClick'] }) {
-  const label = fileRef.startLine
-    ? `${fileRef.file}:${fileRef.startLine}:${fileRef.endLine}`
-    : fileRef.file;
+  const label = fileRef.startLine ? `${fileRef.file}:${fileRef.startLine}:${fileRef.endLine}` : fileRef.file;
   return (
     <button
       onClick={() => onClick?.(fileRef.file, fileRef.startLine, fileRef.endLine)}
@@ -163,16 +157,43 @@ function LegacyRenderer({ msg, onRefClick }: { msg: Message; onRefClick?: Props[
   );
 }
 
+function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRemove: () => void }) {
+  if (attachment.type === 'file-ref') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-900/40 border border-blue-700/50 rounded text-xs text-blue-400 shrink-0">
+        <span className="opacity-60">@</span>
+        <span>
+          {attachment.file} ({attachment.startLine}-{attachment.endLine})
+        </span>
+        <button onClick={onRemove} className="ml-0.5 text-blue-500/60 hover:text-blue-300">
+          &times;
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-zinc-700/50 border border-zinc-600/50 rounded text-xs text-zinc-400 max-w-[280px] shrink-0">
+      <span className="truncate">
+        &ldquo;{attachment.text.slice(0, 60)}
+        {attachment.text.length > 60 ? '...' : ''}&rdquo;
+      </span>
+      <button onClick={onRemove} className="ml-0.5 flex-shrink-0 text-zinc-500 hover:text-zinc-300">
+        &times;
+      </button>
+    </span>
+  );
+}
+
 export default function ChatPanel({
   messages,
   streaming,
   streamingParts,
-  selection,
-  pendingAsk,
-  onClearPendingAsk,
+  attachments,
+  onRemoveAttachment,
+  onClearAttachments,
+  onAddAttachment,
+  copySource,
   onSend,
-  onClearSelection,
-  getReference,
   onReferenceClick,
 }: Props) {
   const [input, setInput] = useState('');
@@ -183,24 +204,58 @@ export default function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingParts]);
 
+  // Focus input when attachments are added
+  const prevAttachLen = useRef(0);
   useEffect(() => {
-    if (pendingAsk) {
+    if (attachments.length > prevAttachLen.current) {
       inputRef.current?.focus();
     }
-  }, [pendingAsk]);
+    prevAttachLen.current = attachments.length;
+  }, [attachments.length]);
+
+  // Smart paste: if clipboard matches tracked copy source, create file-ref chip
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const source = copySource.current;
+      if (!source) return;
+
+      const pastedText = e.clipboardData.getData('text');
+      if (pastedText.trim() === source.text.trim()) {
+        e.preventDefault();
+        onAddAttachment({
+          type: 'file-ref',
+          file: source.file,
+          startLine: source.startLine,
+          endLine: source.endLine,
+          preview: pastedText.slice(0, 100),
+        });
+        copySource.current = null; // consume the source
+      }
+    },
+    [copySource, onAddAttachment],
+  );
 
   const handleSubmit = () => {
     const text = input.trim();
     if (!text || streaming) return;
+
     const refs: FileRef[] = [];
-    if (selection) {
-      refs.push({ file: selection.fileName, startLine: selection.startLine, endLine: selection.endLine });
+    const prefixParts: string[] = [];
+
+    for (const att of attachments) {
+      if (att.type === 'file-ref') {
+        refs.push({ file: att.file, startLine: att.startLine, endLine: att.endLine });
+        prefixParts.push(`[${att.file}:${att.startLine}:${att.endLine}]`);
+      } else {
+        prefixParts.push(`> ${att.text.replace(/\n/g, '\n> ')}`);
+      }
     }
-    const msg = selection ? `${getReference()} ${text}` : text;
+
+    const msg = prefixParts.length > 0 ? `${prefixParts.join('\n\n')}\n\n${text}` : text;
+
     onSend(msg, refs);
     setInput('');
-    onClearSelection();
-    onClearPendingAsk?.();
+    onClearAttachments();
   };
 
   return (
@@ -212,15 +267,10 @@ export default function ChatPanel({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
-                msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-zinc-800 text-zinc-200'
+                msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'
               }`}
             >
               {/* User reference badges */}
@@ -234,9 +284,11 @@ export default function ChatPanel({
 
               {/* Assistant message content: prefer ordered parts, fall back to legacy */}
               {msg.role === 'assistant' ? (
-                msg.parts && msg.parts.length > 0
-                  ? <PartsRenderer parts={msg.parts} onRefClick={onReferenceClick} />
-                  : <LegacyRenderer msg={msg} onRefClick={onReferenceClick} />
+                msg.parts && msg.parts.length > 0 ? (
+                  <PartsRenderer parts={msg.parts} onRefClick={onReferenceClick} />
+                ) : (
+                  <LegacyRenderer msg={msg} onRefClick={onReferenceClick} />
+                )
               ) : (
                 msg.content && (
                   <div className="prose prose-invert prose-sm max-w-none">
@@ -267,38 +319,39 @@ export default function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      {/* Selection / pending ask badge */}
-      {(selection || pendingAsk) && (
-        <div className="px-4 py-1.5 border-t border-zinc-800 flex items-center gap-2 bg-zinc-900">
-          {selection && (
-            <span className="text-xs text-blue-400 bg-blue-900/30 border border-blue-700/50 px-2 py-0.5 rounded">
-              {getReference()}
-            </span>
-          )}
-          <span className="text-xs text-zinc-500 truncate flex-1">
-            "{(selection?.text ?? pendingAsk ?? '').slice(0, 80)}{(selection?.text ?? pendingAsk ?? '').length > 80 ? '...' : ''}"
-          </span>
-          <button onClick={() => { onClearSelection(); onClearPendingAsk?.(); }} className="text-zinc-500 hover:text-zinc-300 text-xs">&times;</button>
-        </div>
-      )}
-
-      {/* Input */}
+      {/* Input area: chips + textarea in one visual container */}
       <div className="px-4 py-3 border-t border-zinc-800">
         <div className="flex gap-2">
-          <textarea
-            ref={inputRef}
-            rows={2}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-            placeholder={selection ? '针对选中内容提问...' : '输入消息...'}
-            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 resize-none outline-none focus:border-blue-500 placeholder-zinc-500"
-          />
+          <div className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg focus-within:border-blue-500 transition-colors">
+            {/* Attachment chips */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-1 px-3 pt-2">
+                {attachments.map((att, i) => (
+                  <AttachmentChip key={i} attachment={att} onRemove={() => onRemoveAttachment(i)} />
+                ))}
+              </div>
+            )}
+            {/* Text input */}
+            <textarea
+              ref={inputRef}
+              rows={2}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onPaste={handlePaste}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+                // Backspace with empty input removes last attachment
+                if (e.key === 'Backspace' && !input && attachments.length > 0) {
+                  onRemoveAttachment(attachments.length - 1);
+                }
+              }}
+              placeholder={attachments.length > 0 ? '针对引用内容提问...' : '输入消息...'}
+              className="w-full bg-transparent px-3 py-2 text-sm text-zinc-200 resize-none outline-none placeholder-zinc-500"
+            />
+          </div>
           <button
             onClick={handleSubmit}
             disabled={streaming || !input.trim()}

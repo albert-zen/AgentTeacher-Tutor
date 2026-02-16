@@ -40,6 +40,17 @@ export interface FileContent {
   totalLines: number;
 }
 
+export interface CopySource {
+  file: string;
+  startLine: number;
+  endLine: number;
+  text: string;
+}
+
+export type Attachment =
+  | { type: 'file-ref'; file: string; startLine: number; endLine: number; preview: string }
+  | { type: 'quote'; text: string };
+
 export async function createSession(concept: string): Promise<Session> {
   const res = await fetch(`${BASE}/session`, {
     method: 'POST',
@@ -133,7 +144,9 @@ export function streamChat(
           try {
             const event: SSEEvent = JSON.parse(line.slice(6));
             onEvent?.(event);
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
     }

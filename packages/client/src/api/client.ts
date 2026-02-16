@@ -13,6 +13,11 @@ export interface ToolEvent {
   result?: unknown;
 }
 
+export type MessagePart =
+  | { type: 'text'; content: string }
+  | { type: 'tool-call'; toolName: string; args?: Record<string, unknown> }
+  | { type: 'tool-result'; toolName: string; result?: unknown };
+
 export interface ChatMessage {
   id: string;
   sessionId: string;
@@ -20,6 +25,7 @@ export interface ChatMessage {
   content: string;
   references?: FileRef[];
   toolEvents?: ToolEvent[];
+  parts?: MessagePart[];
   createdAt: string;
 }
 

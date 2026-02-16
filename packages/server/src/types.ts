@@ -55,6 +55,13 @@ export interface ToolEvent {
   result?: unknown;
 }
 
+// === Message Parts (ordered sequence of text and tool events) ===
+
+export type MessagePart =
+  | { type: 'text'; content: string }
+  | { type: 'tool-call'; toolName: string; args?: Record<string, unknown> }
+  | { type: 'tool-result'; toolName: string; result?: unknown };
+
 // === Chat ===
 
 export interface ChatMessage {
@@ -65,6 +72,8 @@ export interface ChatMessage {
   references?: FileReference[];
   /** Tool events that occurred during this response (agent layer, optional) */
   toolEvents?: ToolEvent[];
+  /** Ordered sequence of text and tool events, preserving interleaving */
+  parts?: MessagePart[];
   createdAt: string;
 }
 

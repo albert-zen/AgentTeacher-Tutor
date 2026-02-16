@@ -1,14 +1,13 @@
 import { useState, useCallback, useRef } from 'react';
 import * as api from '../api/client';
-import type { SSEEvent, ToolEvent } from '../api/client';
+import type { SSEEvent, MessagePart } from '../api/client';
 
 export function useSession() {
   const [session, setSession] = useState<api.Session | null>(null);
   const [messages, setMessages] = useState<api.ChatMessage[]>([]);
   const [files, setFiles] = useState<string[]>([]);
   const [streaming, setStreaming] = useState(false);
-  const [streamingText, setStreamingText] = useState('');
-  const [streamingToolEvents, setStreamingToolEvents] = useState<ToolEvent[]>([]);
+  const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   // Use ref to always have latest session in callbacks
   const sessionRef = useRef<api.Session | null>(null);
@@ -26,8 +25,7 @@ export function useSession() {
   const sendMessage = useCallback(
     (sessionId: string, message: string, references: api.FileRef[]) => {
       setStreaming(true);
-      setStreamingText('');
-      setStreamingToolEvents([]);
+      setStreamingParts([]);
       const userMsg: api.ChatMessage = {
         id: Date.now().toString(),
         sessionId,
@@ -38,40 +36,50 @@ export function useSession() {
       };
       setMessages((prev) => [...prev, userMsg]);
 
-      let text = '';
-      const toolEvents: ToolEvent[] = [];
+      let fullText = '';
+      const parts: MessagePart[] = [];
+      let currentTextPart: (MessagePart & { type: 'text' }) | null = null;
 
       abortRef.current = api.streamChat(sessionId, message, references, (event: SSEEvent) => {
         if (event.type === 'text-delta') {
-          text += event.content ?? '';
-          setStreamingText(text);
+          const delta = event.content ?? '';
+          fullText += delta;
+          if (delta) {
+            if (currentTextPart) {
+              currentTextPart.content += delta;
+            } else {
+              currentTextPart = { type: 'text', content: delta };
+              parts.push(currentTextPart);
+            }
+            setStreamingParts([...parts]);
+          }
         } else if (event.type === 'tool-call') {
-          toolEvents.push({ type: 'tool-call', toolName: event.toolName ?? 'unknown', args: event.args });
-          setStreamingToolEvents([...toolEvents]);
+          currentTextPart = null;
+          parts.push({ type: 'tool-call', toolName: event.toolName ?? 'unknown', args: event.args });
+          setStreamingParts([...parts]);
         } else if (event.type === 'tool-result') {
-          toolEvents.push({ type: 'tool-result', toolName: event.toolName ?? 'unknown', result: event.result });
-          setStreamingToolEvents([...toolEvents]);
+          currentTextPart = null;
+          parts.push({ type: 'tool-result', toolName: event.toolName ?? 'unknown', result: event.result });
+          setStreamingParts([...parts]);
           refreshFilesBySessionId(sessionId);
         } else if (event.type === 'done') {
-          if (text.trim() || toolEvents.length > 0) {
+          if (fullText.trim() || parts.length > 0) {
             const assistantMsg: api.ChatMessage = {
               id: (Date.now() + 1).toString(),
               sessionId,
               role: 'assistant',
-              content: text,
-              toolEvents: toolEvents.length > 0 ? [...toolEvents] : undefined,
+              content: fullText,
+              parts: parts.length > 0 ? [...parts] : undefined,
               createdAt: new Date().toISOString(),
             };
             setMessages((prev) => [...prev, assistantMsg]);
           }
-          setStreamingText('');
-          setStreamingToolEvents([]);
+          setStreamingParts([]);
           setStreaming(false);
           refreshFilesBySessionId(sessionId);
         } else if (event.type === 'error') {
           setStreaming(false);
-          setStreamingText('');
-          setStreamingToolEvents([]);
+          setStreamingParts([]);
         }
       });
     },
@@ -113,8 +121,7 @@ export function useSession() {
     setMessages([]);
     setFiles([]);
     setStreaming(false);
-    setStreamingText('');
-    setStreamingToolEvents([]);
+    setStreamingParts([]);
   }, []);
 
   return {
@@ -122,8 +129,7 @@ export function useSession() {
     messages,
     files,
     streaming,
-    streamingText,
-    streamingToolEvents,
+    streamingParts,
     startSession,
     loadSession,
     clearSession,

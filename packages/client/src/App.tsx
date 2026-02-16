@@ -9,7 +9,7 @@ import { useTextSelection } from './hooks/useTextSelection';
 import * as api from './api/client';
 
 export default function App() {
-  const { session, messages, files, streaming, streamingText, streamingToolEvents, startSession, loadSession, clearSession, send, refreshFiles } = useSession();
+  const { session, messages, files, streaming, streamingParts, startSession, loadSession, clearSession, send, refreshFiles } = useSession();
   const { selection, handleSelection, clearSelection, getReference } = useTextSelection();
 
   const [conceptInput, setConceptInput] = useState('');
@@ -201,8 +201,7 @@ export default function App() {
           <ChatPanel
             messages={messages}
             streaming={streaming}
-            streamingText={streamingText}
-            streamingToolEvents={streamingToolEvents}
+            streamingParts={streamingParts}
             selection={selection}
             pendingAsk={pendingAsk}
             onClearPendingAsk={() => setPendingAsk(null)}

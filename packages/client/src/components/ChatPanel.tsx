@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { FileRef, ToolEvent } from '../api/client';
+import type { FileRef, MessagePart } from '../api/client';
 import type { TextSelection } from '../hooks/useTextSelection';
 
 interface Message {
@@ -8,14 +8,14 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   references?: FileRef[];
-  toolEvents?: ToolEvent[];
+  toolEvents?: { type: string; toolName: string; args?: Record<string, unknown>; result?: unknown }[];
+  parts?: MessagePart[];
 }
 
 interface Props {
   messages: Message[];
   streaming: boolean;
-  streamingText: string;
-  streamingToolEvents: ToolEvent[];
+  streamingParts: MessagePart[];
   selection: TextSelection | null;
   pendingAsk?: string | null;
   onClearPendingAsk?: () => void;
@@ -67,23 +67,29 @@ function MessageContent({ content, onRefClick }: { content: string; onRefClick?:
   );
 }
 
-function toolLabel(event: ToolEvent): string {
-  const path = (event.args as Record<string, unknown>)?.path as string | undefined;
-  if (event.type === 'tool-call') {
-    if (event.toolName === 'read_file') return `Reading ${path ?? 'file'}`;
-    if (event.toolName === 'write_file') return `Writing ${path ?? 'file'}`;
-    return event.toolName;
+function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): string {
+  const path = part.type === 'tool-call'
+    ? (part.args as Record<string, unknown>)?.path as string | undefined
+    : undefined;
+  if (part.type === 'tool-call') {
+    if (part.toolName === 'read_file') return `Reading ${path ?? 'file'}...`;
+    if (part.toolName === 'write_file') return `Writing ${path ?? 'file'}...`;
+    return `${part.toolName}...`;
   }
-  if (event.toolName === 'read_file') return `Read ${path ?? 'file'}`;
-  if (event.toolName === 'write_file') return `Wrote ${path ?? 'file'}`;
-  return `${event.toolName} done`;
+  // tool-result: try to get path from result
+  const resultPath = (part.result as Record<string, unknown>)?.data
+    ? ((part.result as Record<string, unknown>).data as Record<string, unknown>)?.path as string | undefined
+    : undefined;
+  if (part.toolName === 'read_file') return `Read ${resultPath ?? 'file'}`;
+  if (part.toolName === 'write_file') return `Wrote ${resultPath ?? 'file'}`;
+  return `${part.toolName} done`;
 }
 
-function ToolEventCard({ event }: { event: ToolEvent }) {
+function ToolEventCard({ part }: { part: MessagePart & { type: 'tool-call' | 'tool-result' } }) {
   const [expanded, setExpanded] = useState(false);
-  const isCall = event.type === 'tool-call';
+  const isCall = part.type === 'tool-call';
   const icon = isCall
-    ? event.toolName === 'read_file' ? '\u{1F4D6}' : '\u{270F}\u{FE0F}'
+    ? part.toolName === 'read_file' ? '\u{1F4D6}' : '\u{270F}\u{FE0F}'
     : '\u2713';
 
   return (
@@ -93,12 +99,12 @@ function ToolEventCard({ event }: { event: ToolEvent }) {
         className="flex items-center gap-1.5 px-2 py-1 bg-zinc-700/50 border border-zinc-600/50 rounded text-xs text-zinc-400 hover:bg-zinc-700 w-full text-left"
       >
         <span>{icon}</span>
-        <span className="flex-1 truncate">{toolLabel(event)}</span>
+        <span className="flex-1 truncate">{toolLabel(part)}</span>
         <span className="text-zinc-500 text-[10px]">{expanded ? '\u25BE' : '\u25B8'}</span>
       </button>
       {expanded && (
         <pre className="mt-0.5 px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-500 font-mono overflow-x-auto max-h-24 overflow-y-auto">
-          {JSON.stringify(isCall ? event.args : event.result, null, 2)}
+          {JSON.stringify(isCall ? part.args : part.result, null, 2)}
         </pre>
       )}
     </div>
@@ -119,23 +125,48 @@ function ReferenceBadge({ fileRef, onClick }: { fileRef: FileRef; onClick?: Prop
   );
 }
 
-function ToolEventsList({ events }: { events: ToolEvent[] }) {
-  // Pair tool-call and tool-result by toolName sequence: show only the call card
-  // but mark it as completed if a matching result follows
+/** Render an ordered list of message parts (text interleaved with tool events) */
+function PartsRenderer({ parts, onRefClick }: { parts: MessagePart[]; onRefClick?: Props['onReferenceClick'] }) {
   return (
-    <div className="mb-2 space-y-0.5">
-      {events.map((evt, i) => (
-        <ToolEventCard key={i} event={evt} />
-      ))}
-    </div>
+    <>
+      {parts.map((part, i) => {
+        if (part.type === 'text') {
+          return part.content ? (
+            <div key={i} className="prose prose-invert prose-sm max-w-none">
+              <MessageContent content={part.content} onRefClick={onRefClick} />
+            </div>
+          ) : null;
+        }
+        return <ToolEventCard key={i} part={part} />;
+      })}
+    </>
+  );
+}
+
+/** Fallback renderer for old messages that only have toolEvents + content (no parts) */
+function LegacyRenderer({ msg, onRefClick }: { msg: Message; onRefClick?: Props['onReferenceClick'] }) {
+  return (
+    <>
+      {msg.toolEvents && msg.toolEvents.length > 0 && (
+        <div className="mb-2 space-y-0.5">
+          {msg.toolEvents.map((evt, i) => (
+            <ToolEventCard key={i} part={evt as MessagePart & { type: 'tool-call' | 'tool-result' }} />
+          ))}
+        </div>
+      )}
+      {msg.content && (
+        <div className="prose prose-invert prose-sm max-w-none">
+          <MessageContent content={msg.content} onRefClick={onRefClick} />
+        </div>
+      )}
+    </>
   );
 }
 
 export default function ChatPanel({
   messages,
   streaming,
-  streamingText,
-  streamingToolEvents,
+  streamingParts,
   selection,
   pendingAsk,
   onClearPendingAsk,
@@ -150,7 +181,7 @@ export default function ChatPanel({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingText, streamingToolEvents]);
+  }, [messages, streamingParts]);
 
   useEffect(() => {
     if (pendingAsk) {
@@ -201,40 +232,32 @@ export default function ChatPanel({
                 </div>
               )}
 
-              {/* Tool events for assistant messages */}
-              {msg.role === 'assistant' && msg.toolEvents && msg.toolEvents.length > 0 && (
-                <ToolEventsList events={msg.toolEvents} />
-              )}
-
-              {/* Message content */}
-              {msg.content && (
-                <div className="prose prose-invert prose-sm max-w-none">
-                  <MessageContent content={msg.content} onRefClick={onReferenceClick} />
-                </div>
+              {/* Assistant message content: prefer ordered parts, fall back to legacy */}
+              {msg.role === 'assistant' ? (
+                msg.parts && msg.parts.length > 0
+                  ? <PartsRenderer parts={msg.parts} onRefClick={onReferenceClick} />
+                  : <LegacyRenderer msg={msg} onRefClick={onReferenceClick} />
+              ) : (
+                msg.content && (
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <MessageContent content={msg.content} onRefClick={onReferenceClick} />
+                  </div>
+                )
               )}
             </div>
           </div>
         ))}
 
         {/* Streaming assistant message */}
-        {streaming && (streamingText || streamingToolEvents.length > 0) && (
+        {streaming && streamingParts.length > 0 && (
           <div className="flex justify-start">
             <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
-              {streamingToolEvents.length > 0 && (
-                <ToolEventsList events={streamingToolEvents} />
-              )}
-              {streamingText && (
-                <div className="prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown>{streamingText}</ReactMarkdown>
-                </div>
-              )}
-              {!streamingText && (
-                <span className="text-zinc-400 animate-pulse">...</span>
-              )}
+              <PartsRenderer parts={streamingParts} onRefClick={onReferenceClick} />
+              <span className="text-zinc-400 animate-pulse">...</span>
             </div>
           </div>
         )}
-        {streaming && !streamingText && streamingToolEvents.length === 0 && (
+        {streaming && streamingParts.length === 0 && (
           <div className="flex justify-start">
             <div className="px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
               <span className="animate-pulse">思考中...</span>

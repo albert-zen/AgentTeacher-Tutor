@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { join } from 'path';
-import type { Session, ChatMessage, FileReference, ToolEvent } from '../types.js';
+import type { Session, ChatMessage, FileReference, ToolEvent, MessagePart } from '../types.js';
 import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
@@ -143,28 +143,40 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
 
       let fullText = '';
       const toolEvents: ToolEvent[] = [];
+      const parts: MessagePart[] = [];
+      let currentTextPart: (MessagePart & { type: 'text' }) | null = null;
 
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
           const delta = part.text ?? '';
           fullText += delta;
           if (delta) {
+            if (currentTextPart) {
+              currentTextPart.content += delta;
+            } else {
+              currentTextPart = { type: 'text', content: delta };
+              parts.push(currentTextPart);
+            }
             res.write(`data: ${JSON.stringify({ type: 'text-delta', content: delta })}\n\n`);
           }
         } else if (part.type === 'tool-call') {
+          currentTextPart = null;
           const args = part.input as Record<string, unknown>;
           toolEvents.push({ type: 'tool-call', toolName: part.toolName, args });
+          parts.push({ type: 'tool-call', toolName: part.toolName, args });
           res.write(`data: ${JSON.stringify({ type: 'tool-call', toolName: part.toolName, args })}\n\n`);
         } else if (part.type === 'tool-result') {
+          currentTextPart = null;
           const toolResult = part.output;
           toolEvents.push({ type: 'tool-result', toolName: part.toolName, result: toolResult });
+          parts.push({ type: 'tool-result', toolName: part.toolName, result: toolResult });
           res.write(`data: ${JSON.stringify({ type: 'tool-result', toolName: part.toolName, result: toolResult })}\n\n`);
         } else if (part.type === 'reasoning-delta') {
           // GLM-4.7 reasoning tokens - skip, don't send to frontend
         }
       }
 
-      // Save assistant message with tool events
+      // Save assistant message with ordered parts
       if (fullText.trim() || toolEvents.length > 0) {
         const assistantMsg: ChatMessage = {
           id: uuid(),
@@ -172,6 +184,7 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
           role: 'assistant',
           content: fullText,
           toolEvents: toolEvents.length > 0 ? toolEvents : undefined,
+          parts: parts.length > 0 ? parts : undefined,
           createdAt: new Date().toISOString(),
         };
         store.addMessage(assistantMsg);

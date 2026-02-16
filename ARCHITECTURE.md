@@ -4,6 +4,16 @@
 
 Teacher Agent Notebook — AI 驱动的教学工具。Teacher Agent 创建结构化学习材料（guidance.md、ground-truth.md、milestones.md），通过聊天交互辅导学生。三栏 UI：文件树 | Markdown 编辑器 | 聊天面板。
 
+## 发展方向：上下文编排器 (Context Orchestrator)
+
+本应用的核心演进方向是成为一个**上下文编排器**——让人和 Agent 都能灵活、自由地构建、编辑、选择传入给模型的上下文。
+
+关键理念：
+- **Everything is a file**：所有上下文（学习材料、用户 profile、聊天历史）均以文件形式存在，可编辑、可引用、可 fork
+- **人机双向编排**：用户可以手动选择/编辑上下文片段传给 Agent；Agent 也可以主动读取/创建/组织上下文文件
+- **分块与选择**：上下文文件按标题或标签分块，用户可按需勾选哪些块参与当前对话
+- **引用即定位**：`[file:startLine:endLine]` 引用体系贯穿编辑器和聊天，精确关联上下文来源
+
 ## 技术栈
 
 | 层级 | 技术 |

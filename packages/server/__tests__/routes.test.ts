@@ -34,18 +34,22 @@ afterEach(() => {
 });
 
 describe('GET /api/system-prompt', () => {
-  it('returns empty content when file does not exist', async () => {
+  it('returns empty content with defaultContent when file does not exist', async () => {
     const res = await request(app).get('/api/system-prompt');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ content: '', totalLines: 0 });
+    expect(res.body.content).toBe('');
+    expect(res.body.totalLines).toBe(0);
+    expect(typeof res.body.defaultContent).toBe('string');
+    expect(res.body.defaultContent.length).toBeGreaterThan(0);
   });
 
-  it('returns file content when system-prompt.md exists', async () => {
+  it('returns file content with defaultContent when system-prompt.md exists', async () => {
     writeFileSync(join(tempDir, 'system-prompt.md'), '# Custom Prompt\n\nBe helpful.');
     const res = await request(app).get('/api/system-prompt');
     expect(res.status).toBe(200);
     expect(res.body.content).toBe('# Custom Prompt\n\nBe helpful.');
     expect(res.body.totalLines).toBe(3);
+    expect(typeof res.body.defaultContent).toBe('string');
   });
 });
 

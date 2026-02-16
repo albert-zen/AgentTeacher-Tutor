@@ -105,7 +105,7 @@ export async function updateProfile(content: string): Promise<void> {
   });
 }
 
-export async function getSystemPrompt(): Promise<FileContent> {
+export async function getSystemPrompt(): Promise<FileContent & { defaultContent: string }> {
   const res = await fetch(`${BASE}/system-prompt`);
   return res.json();
 }

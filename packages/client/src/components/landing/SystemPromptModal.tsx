@@ -9,6 +9,7 @@ interface Props {
 
 export default function SystemPromptModal({ open, onClose }: Props) {
   const [content, setContent] = useState('');
+  const [defaultContent, setDefaultContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -17,7 +18,10 @@ export default function SystemPromptModal({ open, onClose }: Props) {
     setLoading(true);
     api
       .getSystemPrompt()
-      .then((res) => setContent(res.content))
+      .then((res) => {
+        setContent(res.content);
+        setDefaultContent(res.defaultContent);
+      })
       .catch(() => setContent(''))
       .finally(() => setLoading(false));
   }, [open]);
@@ -38,8 +42,8 @@ export default function SystemPromptModal({ open, onClose }: Props) {
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="自定义 Teacher Agent 的行为指令...&#10;&#10;例如：用英文教学、多用代码示例、适合初学者..."
-            className="w-full h-52 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-500 resize-none font-mono"
+            placeholder={defaultContent || '自定义 Teacher Agent 的行为指令...'}
+            className="w-full h-64 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-500 resize-none font-mono"
           />
           <p className="text-xs text-zinc-600 mt-2">留空则使用默认提示词</p>
           <div className="flex justify-end gap-2 mt-4">

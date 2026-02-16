@@ -3,7 +3,7 @@ import { join } from 'path';
 import { readdirSync, existsSync, unlinkSync } from 'fs';
 import { FileService } from '../services/fileService.js';
 import type { Store } from '../db/index.js';
-import { isLLMConfigured, type LLMConfig } from '../services/llm.js';
+import { isLLMConfigured, getSystemPrompt as getDefaultSystemPrompt, type LLMConfig } from '../services/llm.js';
 
 export function createFilesRouter(store: Store, dataDir: string, llmConfig: LLMConfig) {
   const router = Router();
@@ -107,14 +107,15 @@ export function createFilesRouter(store: Store, dataDir: string, llmConfig: LLMC
 
   // Global system prompt
   router.get('/system-prompt', (_req, res) => {
+    const defaultContent = getDefaultSystemPrompt();
     const promptPath = join(dataDir, 'system-prompt.md');
     if (!existsSync(promptPath)) {
-      res.json({ content: '', totalLines: 0 });
+      res.json({ content: '', totalLines: 0, defaultContent });
       return;
     }
     const svc = new FileService(dataDir);
     const result = svc.readFile({ path: 'system-prompt.md' });
-    res.json(result);
+    res.json({ ...result, defaultContent });
   });
 
   router.put('/system-prompt', (req, res) => {

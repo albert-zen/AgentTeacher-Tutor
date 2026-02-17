@@ -102,12 +102,17 @@ If student profile information is provided, adapt your teaching style, examples,
 
 /**
  * Resolve the system prompt: prefer custom `data/system-prompt.md`, fall back to built-in default.
+ * Currently global only; session-level override (data/{sessionId}/system-prompt.md) is a future option.
  */
 export function resolveSystemPrompt(dataDir: string): string {
   const customPath = join(dataDir, 'system-prompt.md');
-  if (existsSync(customPath)) {
-    const content = readFileSync(customPath, 'utf-8').trim();
-    if (content) return content;
+  try {
+    if (existsSync(customPath)) {
+      const content = readFileSync(customPath, 'utf-8').trim();
+      if (content) return content;
+    }
+  } catch {
+    // Corrupted or permission issue — fall back silently to default
   }
   return getSystemPrompt();
 }

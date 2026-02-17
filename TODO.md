@@ -103,6 +103,22 @@
 
 ---
 
+### 代码块语法高亮
+
+**现状：** `MarkdownEditor.tsx` 和 `ChatPanel.tsx` 使用 `ReactMarkdown` + `remarkGfm` 渲染 Markdown，代码块（\`\`\`python 等）仅显示为等宽纯文本，无语法着色。
+
+**目标：** 代码块按语言语法高亮渲染，提升 Teacher Agent 输出代码示例时的可读性。
+
+**工程要点：**
+- 方案 A：`react-syntax-highlighter` + `prism`/`hljs` 主题，通过 ReactMarkdown 的 `components={{ code }}` 自定义渲染
+- 方案 B：`shiki`（更现代，主题丰富），但包体积较大
+- 方案 A 更轻量，推荐优先
+- 需同时应用到两个渲染点：`MarkdownEditor.tsx:74` 和 `ChatPanel.tsx:49/56`
+- 可提取共享的 `<MarkdownRenderer>` 组件避免重复配置
+- 主题选择：深色系（与 zinc-950 背景协调），如 `oneDark` 或 `vscDarkPlus`
+
+---
+
 ### 自由对话式开始学习
 
 **现状：** Landing Page 输入框 placeholder 为"输入你想学习的概念..."，要求用户输入精确概念名。`startSession(concept)` 将输入作为 session 标题（`Session.concept`），并自动拼接 `我想学习：${concept}` 作为首条消息发送（`useSession.ts:96`）。用户必须先明确自己要学什么才能开始。
@@ -380,6 +396,7 @@
   多行选中 → 文件引用
   自由对话式开始学习
   聊天自动滚动智能暂停
+  代码块语法高亮
 
 有依赖链:
   System Prompt 文件化 [完成]

@@ -91,15 +91,14 @@
 
 ## Tier 2: 上下文编排（项目核心差异化）
 
-### System Prompt 文件化 + 可编辑 `[部分完成]`
+### System Prompt 文件化 + 可编辑 `[完成]`
 
-**现状：** Landing Page 已有 System Prompt 编辑模态框，可读写 `data/system-prompt.md`，默认提示词显示为 placeholder。
+**现状：** Landing Page 已有 System Prompt 编辑模态框，可读写 `data/system-prompt.md`，默认提示词显示为 placeholder。`resolveSystemPrompt(dataDir)` 优先读取自定义文件，不存在或为空时 fallback 到内置默认。
 
-**剩余：** `getSystemPrompt()` 尚未改为优先读取文件——当前自定义 prompt 保存了但 LLM 调用时未使用。
-
-**待做：**
-- `llm.ts` 的 `streamTeacherResponse` 改为：优先读取 `data/system-prompt.md`，不存在时 fallback 到内置默认
-- 可选：支持 session 级别的 system prompt 覆盖（`data/{sessionId}/system-prompt.md`）
+**已完成：**
+- ✅ 编辑模态框（UI 读写 system-prompt.md）
+- ✅ 默认 prompt 作为 placeholder 显示
+- ✅ LLM 调用时使用自定义 prompt（`resolveSystemPrompt` in `llm.ts`）
 
 ---
 
@@ -279,7 +278,7 @@
   多行选中 → 文件引用
 
 有依赖链:
-  System Prompt 文件化 [部分完成]
+  System Prompt 文件化 [完成]
     └→ LLM Provider 运行时切换（需 system prompt 文件化作为基础）
 
   用户 Profile 分块 + 选择性注入

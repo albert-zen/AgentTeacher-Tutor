@@ -1,6 +1,8 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, tool, stepCountIs, type ModelMessage } from 'ai';
 import { z } from 'zod';
+import { join } from 'path';
+import { existsSync, readFileSync } from 'fs';
 import type { FileService } from './fileService.js';
 import { executeToolCall } from './teacher.js';
 
@@ -98,16 +100,29 @@ If student profile information is provided, adapt your teaching style, examples,
 - Always respond in the same language the student uses`;
 }
 
+/**
+ * Resolve the system prompt: prefer custom `data/system-prompt.md`, fall back to built-in default.
+ */
+export function resolveSystemPrompt(dataDir: string): string {
+  const customPath = join(dataDir, 'system-prompt.md');
+  if (existsSync(customPath)) {
+    const content = readFileSync(customPath, 'utf-8').trim();
+    if (content) return content;
+  }
+  return getSystemPrompt();
+}
+
 export async function streamTeacherResponse(
   model: ReturnType<typeof createLLMClient>,
   fileService: FileService,
   messages: ModelMessage[],
+  systemPrompt: string,
 ) {
   const tools = buildTools(fileService);
 
   return streamText({
     model,
-    system: getSystemPrompt(),
+    system: systemPrompt,
     messages,
     tools,
     stopWhen: stepCountIs(10),

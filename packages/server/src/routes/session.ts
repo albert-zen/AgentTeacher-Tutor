@@ -7,7 +7,13 @@ import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
 import { parseMilestones } from '../services/milestonesParser.js';
-import { createLLMClient, streamTeacherResponse, isLLMConfigured, type LLMConfig } from '../services/llm.js';
+import {
+  createLLMClient,
+  streamTeacherResponse,
+  resolveSystemPrompt,
+  isLLMConfigured,
+  type LLMConfig,
+} from '../services/llm.js';
 import type { ModelMessage } from 'ai';
 
 export function createSessionRouter(store: Store, dataDir: string, llmConfig: LLMConfig) {
@@ -145,7 +151,7 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
     }
 
     try {
-      const result = await streamTeacherResponse(model, fileService, llmMessages);
+      const result = await streamTeacherResponse(model, fileService, llmMessages, resolveSystemPrompt(dataDir));
 
       let fullText = '';
       const toolEvents: ToolEvent[] = [];

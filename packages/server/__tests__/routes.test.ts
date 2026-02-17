@@ -7,6 +7,7 @@ import request from 'supertest';
 import { Store } from '../src/db/index.js';
 import { createFilesRouter } from '../src/routes/files.js';
 import { createSessionRouter } from '../src/routes/session.js';
+import { getSystemPrompt, resolveSystemPrompt } from '../src/services/llm.js';
 import type { LLMConfig } from '../src/services/llm.js';
 
 let tempDir: string;
@@ -130,5 +131,25 @@ describe('GET /api/session/:id/milestones', () => {
   it('returns 404 for non-existent session', async () => {
     const res = await request(app).get('/api/session/nonexistent/milestones');
     expect(res.status).toBe(404);
+  });
+});
+
+describe('resolveSystemPrompt', () => {
+  it('returns built-in default when no custom file exists', () => {
+    const prompt = resolveSystemPrompt(tempDir);
+    expect(prompt).toBe(getSystemPrompt());
+    expect(prompt).toContain('Teacher Agent');
+  });
+
+  it('returns custom prompt when system-prompt.md exists', () => {
+    writeFileSync(join(tempDir, 'system-prompt.md'), 'You are a math tutor.');
+    const prompt = resolveSystemPrompt(tempDir);
+    expect(prompt).toBe('You are a math tutor.');
+  });
+
+  it('falls back to default when system-prompt.md is empty', () => {
+    writeFileSync(join(tempDir, 'system-prompt.md'), '   \n  ');
+    const prompt = resolveSystemPrompt(tempDir);
+    expect(prompt).toBe(getSystemPrompt());
   });
 });

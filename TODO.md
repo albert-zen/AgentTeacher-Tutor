@@ -89,6 +89,20 @@
 
 ---
 
+### 聊天自动滚动智能暂停
+
+**现状：** `ChatPanel.tsx:208-210` 的 `useEffect` 在 `messages` 或 `streamingParts` 变化时无条件调用 `scrollIntoView({ behavior: 'smooth' })`。用户主动上滚查看历史消息时，新内容到达会强制拉回底部，打断阅读。
+
+**目标：** Agent 输出时自动滚动到底部（当前行为），但用户主动上滚后停止自动滚动。用户滚回底部时恢复自动滚动。
+
+**工程要点：**
+- 监听消息容器的 `scroll` 事件，判断是否在底部附近（`scrollTop + clientHeight >= scrollHeight - threshold`）
+- 用 `useRef` 维护 `isUserScrolledUp` 状态
+- `useEffect` 中仅在 `!isUserScrolledUp` 时执行 `scrollIntoView`
+- 可选：用户上滚时显示"↓ 新消息"浮动按钮，点击跳回底部
+
+---
+
 ### 自由对话式开始学习
 
 **现状：** Landing Page 输入框 placeholder 为"输入你想学习的概念..."，要求用户输入精确概念名。`startSession(concept)` 将输入作为 session 标题（`Session.concept`），并自动拼接 `我想学习：${concept}` 作为首条消息发送（`useSession.ts:96`）。用户必须先明确自己要学什么才能开始。
@@ -140,12 +154,34 @@
 **目标：** 自由输入开始 session 后，自动生成简洁标题摘要（如"我刚看到量子纠缠的视频但不太理解" → "量子纠缠"）。
 
 **工程要点：**
-- 方案 A（LLM 生成）：首次 chat 响应完成后，服务端异步调用 LLM 生成 3-5 字标题，更新 session
-- 方案 B（简单截断）：客户端显示时截断前 N 字 + 省略号，不改后端
-- 方案 A 体验更好但依赖 LLM 可用。先用方案 B 作为 fallback，LLM 可用时用方案 A
-- 若用方案 A：`session.ts` chat handler 在首次 `done` 后异步调用 LLM 提取标题
-- `Store` 类需新增 `updateSession(id, patch)` 方法（当前只有 `createSession`）
-- 客户端 session 列表需要在返回 landing page 时重新拉取（当前已有此逻辑）
+- 用户首次发消息时触发两次并行 LLM 调用：一次正常 Teacher 响应，一次轻量标题生成（3-5 字摘要）
+- 标题生成调用完成后更新 `Session.concept`（`Store` 需新增 `updateSession(id, patch)`）
+- 客户端在 session 列表中截断显示作为 fallback（LLM 不可用时也能用）
+- 标题生成 prompt 极简：`"用3-5个字概括这个学习需求：${userMessage}"`
+- SSE 或轮询通知客户端标题已更新（或下次加载 session 列表时自然刷新）
+
+---
+
+### 上下文编排器 (Context Assembler)
+
+**现状：** LLM 调用时的上下文组装散落在 `session.ts:67-98`（引用解析）和 `llm.ts:resolveSystemPrompt`（prompt 拼接），用户无法看到"模型实际会看到什么"，也无法选择哪些信息参与对话。一切皆文件的理念尚未体现为用户可操作的选择界面。
+
+**目标：** 用户可见的上下文选择中间层。用户主动勾选哪些文件片段/块参与当前对话，Assembler 汇集选中内容传给 LLM。这是项目"上下文编排器"愿景的核心实现。
+
+**可选择的上下文源（渐进扩展）：**
+- 个人 Profile 的分块（按 `#` 标题切分，勾选子集）
+- 全局 System Prompt 的分块
+- Session 级教学指令
+- 当前 session 的文件片段（`[file:startLine:endLine]`）
+- 历史 session 的内容（跨 session 引用，远期）
+
+**工程要点：**
+- 服务端：`services/contextAssembler.ts`——纯函数，输入为 `sessionDir` + 用户选择配置，输出为 `{ systemPrompt, contextBlocks }`
+- 选择配置存为 session 目录下的文件（如 `data/{sessionId}/context-config.json`），符合 everything-is-a-file
+- 文件分块解析器：通用的按 `#` 标题 / 自定义标签分块，提取 `{ id, name, content, source }` 对象
+- 客户端：上下文选择面板（workspace 侧边或抽屉），展示可用块 + 勾选状态
+- API：`GET /api/session/:id/context-preview` 预览模型即将看到的完整上下文（调试用）
+- 第一步：从 Profile 分块选择开始，验证整个链路，再扩展到其他源
 
 ---
 
@@ -153,7 +189,7 @@
 
 **现状：** 有 `data/profile.md` 和基础的读写 API，但内容整体注入，无分块选择机制。
 
-**目标：** Profile 文件按标题分块，用户可按需勾选哪些块传给模型。不同 session 可选择不同子集。
+**目标：** Profile 文件按标题分块，用户可按需勾选哪些块传给模型。不同 session 可选择不同子集。作为 Context Assembler 的第一个实际数据源。
 
 **文件格式示例：**
 ```markdown
@@ -209,6 +245,23 @@
 - system prompt 增加搜索使用指引：何时搜索、如何引用来源
 - 速率限制和缓存：防止 Agent 过度搜索
 - 搜索结果可写入 session 文件（如 `references/`），成为可编辑的上下文文件
+
+---
+
+### 视觉输入支持
+
+**现状：** 聊天输入仅支持文本和文件引用。用户无法发送图片给 Teacher Agent（如拍照的板书、截图的公式、论文中的图表）。
+
+**目标：** 用户可以在聊天中上传或粘贴图片，Teacher Agent 能"看到"图片内容并基于此进行教学。
+
+**工程要点：**
+- 依赖 LLM 的多模态能力（需模型支持 vision，如 GPT-4o、Qwen-VL 等）
+- 客户端：ChatPanel 输入区支持图片上传（拖拽 / 粘贴 / 文件选择器）
+- 图片存储：保存到 `data/{sessionId}/images/` 目录，符合 everything-is-a-file
+- 服务端：消息格式从纯文本扩展为多模态（`content: [{ type: 'text', text }, { type: 'image', url }]`）
+- Vercel AI SDK 的 `streamText` 已支持多模态 messages，需调整 `llmMessages` 构建逻辑
+- Attachments 体系扩展：新增 `type: 'image'` attachment 类型
+- 预览：聊天消息中内联显示图片缩略图
 
 ---
 
@@ -308,6 +361,8 @@
 
 以下不是独立需求，而是随项目演进需持续关注的架构问题：
 
+- **Session 模型保持薄**：`Session` 只是目录指针（`{ id, concept, createdAt }`），所有丰富度来自 `data/{sessionId}/` 目录下的文件。新增能力 = 新增文件约定，不加 Session 字段，不做 schema migration。
+- **上下文编排器是核心**：Context Assembler（`services/contextAssembler.ts`）是项目的脊柱——用户选择哪些文件/块参与对话，Assembler 汇集并传给 LLM。所有上下文源（profile、prompt、session 文件、跨 session 引用）统一通过 Assembler 流入。
 - **存储层抽象**：当前 JSON 文件存储无锁无并发。单用户没问题，但多端同步（Electron + 移动端）前需要抽象存储接口（Store interface），方便后续切换到 SQLite 或云端存储。不需要现在就做，但新增存储逻辑时注意不要过度耦合 JSON 文件实现。
 - **客户端测试**：CLAUDE.md 要求 TDD，但客户端零测试。随着 Tier 1（面板拖拽）、Tier 4（内联 chips）等交互复杂功能的加入，缺少测试会越来越痛苦。建议在实现新的客户端功能时同步补测试，不需要补历史债。
 - **性能**：当前无明显瓶颈，但 session 文件数量增长后文件列表 API 可能变慢（`fs.readdir` + `stat`）。大量消息的 `messages.json` 全量读写也是潜在问题。留意，按需优化。
@@ -324,6 +379,7 @@
   Writing 状态指示
   多行选中 → 文件引用
   自由对话式开始学习
+  聊天自动滚动智能暂停
 
 有依赖链:
   System Prompt 文件化 [完成]
@@ -333,11 +389,19 @@
   自由对话式开始学习
     └→ Session 标题自动摘要（低优先级，需自由输入作为前提）
 
+  上下文编排器 (Context Assembler) ← 核心架构
+    └→ 用户 Profile 分块（第一个数据源）
+    └→ 后续扩展：prompt 分块、跨 session 引用...
+
   用户 Profile 分块 + 选择性注入
     └→ 依赖现有 profile API（已有）
+    └→ 依赖 Context Assembler 框架
 
   Teacher Agent 互联网搜索
     └→ 导出功能（搜索结果可纳入导出）
+
+  视觉输入支持
+    └→ 依赖多模态 LLM（模型层面）
 
   内联引用 chips（Tier 4）
     └→ 需先稳定 多行选中 → 文件引用（Tier 2）

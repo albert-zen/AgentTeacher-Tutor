@@ -89,6 +89,22 @@
 
 ---
 
+### 自由对话式开始学习
+
+**现状：** Landing Page 输入框 placeholder 为"输入你想学习的概念..."，要求用户输入精确概念名。`startSession(concept)` 将输入作为 session 标题（`Session.concept`），并自动拼接 `我想学习：${concept}` 作为首条消息发送（`useSession.ts:96`）。用户必须先明确自己要学什么才能开始。
+
+**目标：** 用户可以用任意自由文本开始——"我刚看到量子纠缠的视频但不太理解"、"帮我搞懂 useEffect 清理函数"、"什么是 CAP 定理？"都能直接创建 session。输入体验更像对话而非表单。
+
+**工程要点：**
+- Placeholder 改为开放文案，如"描述你想学的、想问的..."
+- `useSession.ts:96`：去掉 `我想学习：` 前缀，直接将用户原文作为首条消息
+- `Session.concept` 语义变更：暂时存用户原始输入（配合"标题自动摘要"后续优化）
+- Landing Page 输入框可改为 `<textarea>` 支持多行，Enter 发送 / Shift+Enter 换行
+- `SessionSidebar` 需适配长标题显示（`truncate` + `title` tooltip）
+- 服务端 `POST /api/session` 无需改动（`concept` 已接受任意字符串）
+
+---
+
 ## Tier 2: 上下文编排（项目核心差异化）
 
 ### System Prompt 文件化 + 可编辑 `[完成]`
@@ -99,6 +115,37 @@
 - ✅ 编辑模态框（UI 读写 system-prompt.md）
 - ✅ 默认 prompt 作为 placeholder 显示
 - ✅ LLM 调用时使用自定义 prompt（`resolveSystemPrompt` in `llm.ts`）
+
+---
+
+### Session 级教学指令（追加到 System Prompt）
+
+**现状：** `resolveSystemPrompt(dataDir)` 解析全局 system prompt，所有 session 共用。无法针对特定学习主题或学生状态添加额外指令。
+
+**目标：** 支持 session 级教学指令文件 `data/{sessionId}/session-prompt.md`。该内容**追加**到全局 system prompt 末尾（不替换），为当前 session 提供额外上下文（如"该学生有物理背景，多用公式推导"或"本 session 聚焦实践，少讲理论"）。
+
+**工程要点：**
+- `resolveSystemPrompt(dataDir, sessionId?)` 增加可选参数：先解析全局 prompt，再读取 `data/{sessionId}/session-prompt.md`，存在则追加（`\n\n## Session 指令\n${content}`）
+- `session.ts` chat handler 传入 `session.id`
+- 客户端：workspace header 中添加 "教学指令" 按钮，点击弹出编辑模态框（复用 `Modal.tsx`）
+- API：复用现有 file 端点（`PUT /:sessionId/file` 写入 `session-prompt.md`），无需新增路由
+- UI 上区分"全局 prompt（Settings 里编辑）"与"本 session 指令（workspace 里编辑）"
+
+---
+
+### Session 标题自动摘要
+
+**现状：** `Session.concept` 直接使用用户输入文本作为 session 标题。当前因为要求输入精确概念名所以标题简短可辨识，但若改为自由输入（见 Tier 1"自由对话式开始学习"），session 列表会出现长标题难以区分。
+
+**目标：** 自由输入开始 session 后，自动生成简洁标题摘要（如"我刚看到量子纠缠的视频但不太理解" → "量子纠缠"）。
+
+**工程要点：**
+- 方案 A（LLM 生成）：首次 chat 响应完成后，服务端异步调用 LLM 生成 3-5 字标题，更新 session
+- 方案 B（简单截断）：客户端显示时截断前 N 字 + 省略号，不改后端
+- 方案 A 体验更好但依赖 LLM 可用。先用方案 B 作为 fallback，LLM 可用时用方案 A
+- 若用方案 A：`session.ts` chat handler 在首次 `done` 后异步调用 LLM 提取标题
+- `Store` 类需新增 `updateSession(id, patch)` 方法（当前只有 `createSession`）
+- 客户端 session 列表需要在返回 landing page 时重新拉取（当前已有此逻辑）
 
 ---
 
@@ -276,10 +323,15 @@
   SSE 流中断恢复 + 消息重试
   Writing 状态指示
   多行选中 → 文件引用
+  自由对话式开始学习
 
 有依赖链:
   System Prompt 文件化 [完成]
-    └→ LLM Provider 运行时切换（需 system prompt 文件化作为基础）
+    ├→ LLM Provider 运行时切换（需 system prompt 文件化作为基础）
+    └→ Session 级教学指令（追加到全局 prompt）
+
+  自由对话式开始学习
+    └→ Session 标题自动摘要（低优先级，需自由输入作为前提）
 
   用户 Profile 分块 + 选择性注入
     └→ 依赖现有 profile API（已有）

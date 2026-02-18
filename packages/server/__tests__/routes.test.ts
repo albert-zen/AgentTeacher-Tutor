@@ -7,27 +7,19 @@ import request from 'supertest';
 import { Store } from '../src/db/index.js';
 import { createFilesRouter } from '../src/routes/files.js';
 import { createSessionRouter } from '../src/routes/session.js';
-import { getSystemPrompt, resolveSystemPrompt } from '../src/services/llm.js';
-import type { LLMConfig } from '../src/services/llm.js';
+import { getSystemPrompt, resolveSystemPrompt, loadLLMConfig, saveLLMConfig } from '../src/services/llm.js';
 
 let tempDir: string;
 let app: express.Express;
 let store: Store;
-
-const llmConfig: LLMConfig = {
-  provider: 'openai',
-  apiKey: '',
-  baseURL: 'https://api.openai.com/v1',
-  model: 'gpt-4o',
-};
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'teacher-routes-'));
   store = new Store(tempDir);
   app = express();
   app.use(express.json());
-  app.use('/api/session', createSessionRouter(store, tempDir, llmConfig));
-  app.use('/api', createFilesRouter(store, tempDir, llmConfig));
+  app.use('/api/session', createSessionRouter(store, tempDir));
+  app.use('/api', createFilesRouter(store, tempDir));
 });
 
 afterEach(() => {
@@ -67,29 +59,22 @@ describe('PUT /api/system-prompt', () => {
 });
 
 describe('GET /api/llm-status', () => {
-  it('returns unconfigured status when apiKey is empty', async () => {
+  it('returns unconfigured status when no config file and no env vars', async () => {
     const res = await request(app).get('/api/llm-status');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      configured: false,
-      provider: 'openai',
-      model: 'gpt-4o',
-      baseURL: 'https://api.openai.com/v1',
-    });
+    expect(res.body.configured).toBe(false);
+    expect(res.body).not.toHaveProperty('apiKey');
   });
 
-  it('returns configured status when apiKey is set', async () => {
-    const configuredLlm: LLMConfig = {
+  it('returns configured status after saving config file', async () => {
+    saveLLMConfig(tempDir, {
       provider: 'dashscope',
       apiKey: 'sk-test-key',
       baseURL: 'https://dashscope.aliyuncs.com/v1',
       model: 'qwen-max',
-    };
-    const app2 = express();
-    app2.use(express.json());
-    app2.use('/api', createFilesRouter(store, tempDir, configuredLlm));
+    });
 
-    const res = await request(app2).get('/api/llm-status');
+    const res = await request(app).get('/api/llm-status');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       configured: true,
@@ -97,6 +82,51 @@ describe('GET /api/llm-status', () => {
       model: 'qwen-max',
       baseURL: 'https://dashscope.aliyuncs.com/v1',
     });
+  });
+});
+
+describe('PUT /api/llm-config', () => {
+  it('saves config and returns status without apiKey', async () => {
+    const res = await request(app).put('/api/llm-config').send({
+      provider: 'dashscope',
+      apiKey: 'sk-new-key',
+      baseURL: 'https://dashscope.aliyuncs.com/v1',
+      model: 'qwen-max',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.configured).toBe(true);
+    expect(res.body.provider).toBe('dashscope');
+    expect(res.body.model).toBe('qwen-max');
+    expect(res.body).not.toHaveProperty('apiKey');
+  });
+
+  it('supports partial updates (merge with existing)', async () => {
+    saveLLMConfig(tempDir, {
+      provider: 'openai',
+      apiKey: 'sk-old',
+      baseURL: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+    });
+
+    const res = await request(app).put('/api/llm-config').send({ model: 'gpt-4o-mini' });
+    expect(res.status).toBe(200);
+    expect(res.body.model).toBe('gpt-4o-mini');
+    expect(res.body.provider).toBe('openai');
+
+    const saved = loadLLMConfig(tempDir);
+    expect(saved.apiKey).toBe('sk-old');
+    expect(saved.model).toBe('gpt-4o-mini');
+  });
+
+  it('reflects in subsequent llm-status calls', async () => {
+    await request(app).put('/api/llm-config').send({
+      apiKey: 'sk-runtime',
+      model: 'claude-3',
+    });
+
+    const res = await request(app).get('/api/llm-status');
+    expect(res.body.configured).toBe(true);
+    expect(res.body.model).toBe('claude-3');
   });
 });
 
@@ -131,6 +161,47 @@ describe('GET /api/session/:id/milestones', () => {
   it('returns 404 for non-existent session', async () => {
     const res = await request(app).get('/api/session/nonexistent/milestones');
     expect(res.status).toBe(404);
+  });
+});
+
+describe('loadLLMConfig / saveLLMConfig', () => {
+  it('falls back to defaults when no config file exists', () => {
+    const config = loadLLMConfig(tempDir);
+    expect(config.provider).toBe('openai');
+    expect(config.apiKey).toBe('');
+    expect(config.baseURL).toBe('https://api.openai.com/v1');
+    expect(config.model).toBe('gpt-4o');
+  });
+
+  it('reads from llm-config.json when it exists', () => {
+    writeFileSync(
+      join(tempDir, 'llm-config.json'),
+      JSON.stringify({ provider: 'custom', apiKey: 'key-123', baseURL: 'https://custom.api', model: 'my-model' }),
+    );
+    const config = loadLLMConfig(tempDir);
+    expect(config.provider).toBe('custom');
+    expect(config.apiKey).toBe('key-123');
+    expect(config.baseURL).toBe('https://custom.api');
+    expect(config.model).toBe('my-model');
+  });
+
+  it('handles corrupted config file gracefully', () => {
+    writeFileSync(join(tempDir, 'llm-config.json'), 'not valid json{{{');
+    const config = loadLLMConfig(tempDir);
+    expect(config.provider).toBe('openai');
+  });
+
+  it('saveLLMConfig merges with existing config', () => {
+    saveLLMConfig(tempDir, {
+      provider: 'openai',
+      apiKey: 'sk-1',
+      baseURL: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+    });
+    saveLLMConfig(tempDir, { model: 'gpt-4o-mini' });
+    const config = loadLLMConfig(tempDir);
+    expect(config.apiKey).toBe('sk-1');
+    expect(config.model).toBe('gpt-4o-mini');
   });
 });
 

@@ -3,9 +3,14 @@ import { join } from 'path';
 import { readdirSync, existsSync, unlinkSync } from 'fs';
 import { FileService } from '../services/fileService.js';
 import type { Store } from '../db/index.js';
-import { isLLMConfigured, getSystemPrompt as getDefaultSystemPrompt, type LLMConfig } from '../services/llm.js';
+import {
+  isLLMConfigured,
+  getSystemPrompt as getDefaultSystemPrompt,
+  loadLLMConfig,
+  saveLLMConfig,
+} from '../services/llm.js';
 
-export function createFilesRouter(store: Store, dataDir: string, llmConfig: LLMConfig) {
+export function createFilesRouter(store: Store, dataDir: string) {
   const router = Router();
 
   function getFileService(sessionId: string): FileService | null {
@@ -127,11 +132,29 @@ export function createFilesRouter(store: Store, dataDir: string, llmConfig: LLMC
 
   // LLM status (read-only, no apiKey exposed)
   router.get('/llm-status', (_req, res) => {
+    const config = loadLLMConfig(dataDir);
     res.json({
-      configured: isLLMConfigured(llmConfig),
-      provider: llmConfig.provider,
-      model: llmConfig.model,
-      baseURL: llmConfig.baseURL,
+      configured: isLLMConfigured(config),
+      provider: config.provider,
+      model: config.model,
+      baseURL: config.baseURL,
+    });
+  });
+
+  // Update LLM config (partial merge — only defined fields are applied)
+  router.put('/llm-config', (req, res) => {
+    const { provider, apiKey, baseURL, model } = req.body;
+    const partial: Record<string, string> = {};
+    if (provider !== undefined) partial.provider = provider;
+    if (apiKey !== undefined) partial.apiKey = apiKey;
+    if (baseURL !== undefined) partial.baseURL = baseURL;
+    if (model !== undefined) partial.model = model;
+    const config = saveLLMConfig(dataDir, partial);
+    res.json({
+      configured: isLLMConfigured(config),
+      provider: config.provider,
+      model: config.model,
+      baseURL: config.baseURL,
     });
   });
 

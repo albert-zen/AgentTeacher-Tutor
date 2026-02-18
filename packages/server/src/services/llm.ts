@@ -2,7 +2,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, tool, stepCountIs, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import { join } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { FileService } from './fileService.js';
 import { executeToolCall } from './teacher.js';
 
@@ -15,6 +15,36 @@ export interface LLMConfig {
 
 export function isLLMConfigured(config: LLMConfig): boolean {
   return !!(config.apiKey && config.apiKey !== 'your-api-key-here');
+}
+
+export function loadLLMConfig(dataDir: string): LLMConfig {
+  const configPath = join(dataDir, 'llm-config.json');
+  if (existsSync(configPath)) {
+    try {
+      const saved = JSON.parse(readFileSync(configPath, 'utf-8'));
+      return {
+        provider: saved.provider || 'openai',
+        apiKey: saved.apiKey || '',
+        baseURL: saved.baseURL || 'https://api.openai.com/v1',
+        model: saved.model || 'gpt-4o',
+      };
+    } catch {
+      /* fall through to env vars */
+    }
+  }
+  return {
+    provider: process.env.LLM_PROVIDER ?? 'openai',
+    apiKey: process.env.LLM_API_KEY ?? '',
+    baseURL: process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1',
+    model: process.env.LLM_MODEL ?? 'gpt-4o',
+  };
+}
+
+export function saveLLMConfig(dataDir: string, config: Partial<LLMConfig>): LLMConfig {
+  const current = loadLLMConfig(dataDir);
+  const merged = { ...current, ...config };
+  writeFileSync(join(dataDir, 'llm-config.json'), JSON.stringify(merged, null, 2));
+  return merged;
 }
 
 export function createLLMClient(config: LLMConfig) {

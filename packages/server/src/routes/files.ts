@@ -141,10 +141,15 @@ export function createFilesRouter(store: Store, dataDir: string) {
     });
   });
 
-  // Update LLM config (partial merge)
+  // Update LLM config (partial merge — only defined fields are applied)
   router.put('/llm-config', (req, res) => {
     const { provider, apiKey, baseURL, model } = req.body;
-    const config = saveLLMConfig(dataDir, { provider, apiKey, baseURL, model });
+    const partial: Record<string, string> = {};
+    if (provider !== undefined) partial.provider = provider;
+    if (apiKey !== undefined) partial.apiKey = apiKey;
+    if (baseURL !== undefined) partial.baseURL = baseURL;
+    if (model !== undefined) partial.model = model;
+    const config = saveLLMConfig(dataDir, partial);
     res.json({
       configured: isLLMConfigured(config),
       provider: config.provider,

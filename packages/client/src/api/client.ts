@@ -130,6 +130,20 @@ export async function getLLMStatus(): Promise<LLMStatus> {
   return res.json();
 }
 
+export async function updateLLMConfig(config: {
+  provider?: string;
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+}): Promise<LLMStatus> {
+  const res = await fetch(`${BASE}/llm-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  return res.json();
+}
+
 export interface MilestoneProgress {
   total: number;
   completed: number;

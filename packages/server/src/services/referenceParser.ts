@@ -19,10 +19,3 @@ export function parseReferences(text: string): FileReference[] {
   }
   return refs;
 }
-
-export function generateReference(ref: FileReference): string {
-  if (ref.startLine !== undefined && ref.endLine !== undefined) {
-    return `[${ref.file}:${ref.startLine}:${ref.endLine}]`;
-  }
-  return `[${ref.file}]`;
-}

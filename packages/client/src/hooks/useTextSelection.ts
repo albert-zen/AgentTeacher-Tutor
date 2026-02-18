@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 
 export interface TextSelection {
   text: string;
@@ -8,9 +8,6 @@ export interface TextSelection {
 }
 
 export function useTextSelection() {
-  const [selection, setSelection] = useState<TextSelection | null>(null);
-
-  /** Try to map the current DOM selection to a file range. Returns the result synchronously. */
   const handleSelection = useCallback((fileName: string, content: string): TextSelection | null => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.toString().trim()) {
@@ -25,17 +22,8 @@ export function useTextSelection() {
     const startLine = beforeSel.split('\n').length;
     const endLine = startLine + selectedText.split('\n').length - 1;
 
-    const result: TextSelection = { text: selectedText, fileName, startLine, endLine };
-    setSelection(result);
-    return result;
+    return { text: selectedText, fileName, startLine, endLine };
   }, []);
 
-  const clearSelection = useCallback(() => setSelection(null), []);
-
-  const getReference = useCallback((): string => {
-    if (!selection) return '';
-    return `[${selection.fileName}:${selection.startLine}:${selection.endLine}]`;
-  }, [selection]);
-
-  return { selection, handleSelection, clearSelection, getReference };
+  return { handleSelection };
 }

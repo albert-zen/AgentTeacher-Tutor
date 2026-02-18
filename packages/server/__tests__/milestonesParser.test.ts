@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMilestones, serializeMilestones } from '../src/services/milestonesParser.js';
+import { parseMilestones } from '../src/services/milestonesParser.js';
 
 describe('解析 milestones.md', () => {
   it('解析标题和所有里程碑项', () => {
@@ -36,37 +36,5 @@ describe('解析 milestones.md', () => {
     expect(result.items).toHaveLength(2);
     expect(result.items[0].name).toBe('A');
     expect(result.items[1].name).toBe('B');
-  });
-});
-
-describe('序列化 milestones', () => {
-  it('从结构化数据生成 milestones.md 内容', () => {
-    const md = serializeMilestones({
-      title: '神经网络',
-      items: [
-        { name: '激活函数', completed: true },
-        { name: '反向传播', completed: false },
-      ],
-    });
-    expect(md).toBe(`# 里程碑: 神经网络\n\n- [x] 激活函数\n- [ ] 反向传播`);
-  });
-
-  it('空 items 只输出标题', () => {
-    const md = serializeMilestones({ title: 'Empty', items: [] });
-    expect(md).toBe('# 里程碑: Empty');
-  });
-
-  it('序列化 → 解析 round-trip', () => {
-    const original = {
-      title: 'RT',
-      items: [
-        { name: 'A', completed: true },
-        { name: 'B', completed: false },
-        { name: 'C', completed: true },
-      ],
-    };
-    const md = serializeMilestones(original);
-    const parsed = parseMilestones(md);
-    expect(parsed).toEqual(original);
   });
 });

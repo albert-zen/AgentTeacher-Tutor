@@ -77,11 +77,6 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export interface ChatRequest {
-  message: string;
-  references?: FileReference[];
-}
-
 // === SSE Event Types ===
 
 export interface SSETextDelta {

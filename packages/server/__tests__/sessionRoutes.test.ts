@@ -1,30 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import express from 'express';
 import request from 'supertest';
 import { Store } from '../src/db/index.js';
 import { createSessionRouter } from '../src/routes/session.js';
-import type { LLMConfig } from '../src/services/llm.js';
 
 let tempDir: string;
 let app: express.Express;
 let store: Store;
-
-const llmConfig: LLMConfig = {
-  provider: 'openai',
-  apiKey: '',
-  baseURL: 'https://api.openai.com/v1',
-  model: 'gpt-4o',
-};
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'teacher-session-routes-'));
   store = new Store(tempDir);
   app = express();
   app.use(express.json());
-  app.use('/api/session', createSessionRouter(store, tempDir, llmConfig));
+  app.use('/api/session', createSessionRouter(store, tempDir));
 });
 
 afterEach(() => {
@@ -87,5 +79,49 @@ describe('Session lifecycle routes', () => {
     const res = await request(app).get('/api/session/does-not-exist');
     expect(res.status).toBe(404);
     expect(res.body.error).toBeDefined();
+  });
+});
+
+describe('Session prompt draft copy on creation', () => {
+  it('copies draft into new session when session-prompt-draft.md exists', async () => {
+    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '多用物理类比来解释');
+
+    const res = await request(app).post('/api/session').send({ concept: 'test' });
+    const sessionId = res.body.id;
+
+    const promptPath = join(tempDir, sessionId, 'session-prompt.md');
+    expect(existsSync(promptPath)).toBe(true);
+    expect(readFileSync(promptPath, 'utf-8')).toBe('多用物理类比来解释');
+  });
+
+  it('does not create session-prompt.md when no draft exists', async () => {
+    const res = await request(app).post('/api/session').send({ concept: 'test' });
+    const sessionId = res.body.id;
+
+    const promptPath = join(tempDir, sessionId, 'session-prompt.md');
+    expect(existsSync(promptPath)).toBe(false);
+  });
+
+  it('does not create session-prompt.md when draft is empty/whitespace', async () => {
+    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '   \n  ');
+
+    const res = await request(app).post('/api/session').send({ concept: 'test' });
+    const sessionId = res.body.id;
+
+    const promptPath = join(tempDir, sessionId, 'session-prompt.md');
+    expect(existsSync(promptPath)).toBe(false);
+  });
+
+  it('each session gets its own copy — editing one does not affect others', async () => {
+    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '原始指令');
+
+    const s1 = (await request(app).post('/api/session').send({ concept: 'a' })).body.id;
+    const s2 = (await request(app).post('/api/session').send({ concept: 'b' })).body.id;
+
+    // Modify session 1's prompt
+    writeFileSync(join(tempDir, s1, 'session-prompt.md'), '修改后的指令');
+
+    // Session 2 should still have original
+    expect(readFileSync(join(tempDir, s2, 'session-prompt.md'), 'utf-8')).toBe('原始指令');
   });
 });

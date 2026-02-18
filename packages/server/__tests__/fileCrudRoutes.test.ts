@@ -59,6 +59,24 @@ describe('Profile routes', () => {
   });
 });
 
+describe('Session prompt draft routes', () => {
+  it('GET /api/session-prompt-draft returns empty when no draft exists', async () => {
+    const res = await request(app).get('/api/session-prompt-draft');
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe('');
+    expect(res.body.totalLines).toBe(0);
+  });
+
+  it('PUT /api/session-prompt-draft saves and GET returns it', async () => {
+    const put = await request(app).put('/api/session-prompt-draft').send({ content: '多用物理类比' });
+    expect(put.status).toBe(200);
+    expect(put.body.success).toBe(true);
+
+    const get = await request(app).get('/api/session-prompt-draft');
+    expect(get.body.content).toBe('多用物理类比');
+  });
+});
+
 describe('File CRUD routes', () => {
   // E11
   it('GET /:sessionId/files returns all files, excluding messages.json and dotfiles', async () => {

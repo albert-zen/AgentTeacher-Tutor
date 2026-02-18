@@ -151,7 +151,12 @@ export function createSessionRouter(store: Store, dataDir: string) {
 
     try {
       const model = createLLMClient(currentConfig);
-      const result = await streamTeacherResponse(model, fileService, llmMessages, resolveSystemPrompt(dataDir));
+      const result = await streamTeacherResponse(
+        model,
+        fileService,
+        llmMessages,
+        resolveSystemPrompt(dataDir, session.id),
+      );
 
       let fullText = '';
       const toolEvents: ToolEvent[] = [];

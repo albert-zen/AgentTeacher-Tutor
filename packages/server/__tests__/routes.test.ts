@@ -224,3 +224,30 @@ describe('resolveSystemPrompt', () => {
     expect(prompt).toBe(getSystemPrompt());
   });
 });
+
+describe('resolveSystemPrompt with sessionId', () => {
+  it('appends session-prompt.md content to global prompt', () => {
+    const sessionId = 'test-session';
+    mkdirSync(join(tempDir, sessionId), { recursive: true });
+    writeFileSync(join(tempDir, sessionId, 'session-prompt.md'), '该学生是物理专业');
+
+    const prompt = resolveSystemPrompt(tempDir, sessionId);
+    expect(prompt).toContain('Teacher Agent');
+    expect(prompt).toContain('## Session 指令');
+    expect(prompt).toContain('该学生是物理专业');
+  });
+
+  it('returns only global prompt when session-prompt.md absent', () => {
+    const prompt = resolveSystemPrompt(tempDir, 'no-such-session');
+    expect(prompt).toBe(resolveSystemPrompt(tempDir));
+  });
+
+  it('returns only global prompt when session-prompt.md is empty', () => {
+    const sessionId = 'test-session-2';
+    mkdirSync(join(tempDir, sessionId), { recursive: true });
+    writeFileSync(join(tempDir, sessionId, 'session-prompt.md'), '   ');
+
+    const prompt = resolveSystemPrompt(tempDir, sessionId);
+    expect(prompt).not.toContain('Session 指令');
+  });
+});

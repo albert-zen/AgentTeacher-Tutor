@@ -132,19 +132,35 @@ If student profile information is provided, adapt your teaching style, examples,
 
 /**
  * Resolve the system prompt: prefer custom `data/system-prompt.md`, fall back to built-in default.
- * Currently global only; session-level override (data/{sessionId}/system-prompt.md) is a future option.
+ * If `sessionId` is provided, append `data/{sessionId}/session-prompt.md` as session-level instructions.
  */
-export function resolveSystemPrompt(dataDir: string): string {
+export function resolveSystemPrompt(dataDir: string, sessionId?: string): string {
   const customPath = join(dataDir, 'system-prompt.md');
+  let prompt = getSystemPrompt();
   try {
     if (existsSync(customPath)) {
       const content = readFileSync(customPath, 'utf-8').trim();
-      if (content) return content;
+      if (content) prompt = content;
     }
   } catch {
-    // Corrupted or permission issue — fall back silently to default
+    /* fall through */
   }
-  return getSystemPrompt();
+
+  if (sessionId) {
+    const sessionPromptPath = join(dataDir, sessionId, 'session-prompt.md');
+    try {
+      if (existsSync(sessionPromptPath)) {
+        const sessionContent = readFileSync(sessionPromptPath, 'utf-8').trim();
+        if (sessionContent) {
+          prompt += '\n\n## Session 指令\n' + sessionContent;
+        }
+      }
+    } catch {
+      /* skip corrupted file */
+    }
+  }
+
+  return prompt;
 }
 
 export async function streamTeacherResponse(

@@ -14,7 +14,24 @@ import {
   isLLMConfigured,
   loadLLMConfig,
 } from '../services/llm.js';
-import type { ModelMessage } from 'ai';
+import { generateText, type ModelMessage } from 'ai';
+
+async function generateTitle(dataDir: string, store: Store, sessionId: string, userMessage: string) {
+  const config = loadLLMConfig(dataDir);
+  if (!isLLMConfigured(config)) return;
+
+  const model = createLLMClient(config);
+  const { text } = await generateText({
+    model,
+    prompt: `用3-5个字概括这个学习需求，只返回标题文字，不要引号不要标点：\n${userMessage}`,
+    maxOutputTokens: 20,
+  });
+
+  const title = text.trim().slice(0, 30);
+  if (title) {
+    store.updateSession(sessionId, { concept: title });
+  }
+}
 
 export function createSessionRouter(store: Store, dataDir: string) {
   const router = Router();
@@ -123,6 +140,11 @@ export function createSessionRouter(store: Store, dataDir: string) {
       createdAt: new Date().toISOString(),
     };
     store.addMessage(userMsg);
+
+    const messageCount = store.getMessages(session.id).length;
+    if (messageCount === 1) {
+      generateTitle(dataDir, store, session.id, message).catch(() => {});
+    }
 
     // Build conversation history for LLM
     const history = store.getMessages(session.id);

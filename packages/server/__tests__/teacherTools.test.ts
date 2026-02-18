@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { FileService } from '../src/services/fileService.js';
-import { getToolDefinitions, executeToolCall } from '../src/services/teacher.js';
+import { executeToolCall } from '../src/services/teacher.js';
 
 let tempDir: string;
 let fileService: FileService;
@@ -15,29 +15,6 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
-});
-
-describe('tool 定义', () => {
-  it('read_file 和 write_file 的定义包含正确的参数 schema', () => {
-    const tools = getToolDefinitions();
-    const names = tools.map((t) => t.name);
-    expect(names).toContain('read_file');
-    expect(names).toContain('write_file');
-
-    const writeTool = tools.find((t) => t.name === 'write_file')!;
-    expect(writeTool.parameters.properties).toHaveProperty('path');
-    expect(writeTool.parameters.properties).toHaveProperty('content');
-    expect(writeTool.parameters.properties).toHaveProperty('startLine');
-    expect(writeTool.parameters.properties).toHaveProperty('endLine');
-    expect(writeTool.parameters.required).toContain('path');
-    expect(writeTool.parameters.required).toContain('content');
-
-    const readTool = tools.find((t) => t.name === 'read_file')!;
-    expect(readTool.parameters.properties).toHaveProperty('path');
-    expect(readTool.parameters.properties).toHaveProperty('startLine');
-    expect(readTool.parameters.properties).toHaveProperty('endLine');
-    expect(readTool.parameters.required).toContain('path');
-  });
 });
 
 describe('tool 执行', () => {

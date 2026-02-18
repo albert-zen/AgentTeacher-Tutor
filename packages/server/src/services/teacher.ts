@@ -1,59 +1,6 @@
 import type { FileService } from './fileService.js';
 
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters: {
-    type: string;
-    properties: Record<string, unknown>;
-    required: string[];
-  };
-}
-
-export interface ToolCallResult {
-  success: boolean;
-  data?: any;
-  error?: string;
-}
-
-export function getToolDefinitions(): ToolDefinition[] {
-  return [
-    {
-      name: 'read_file',
-      description: 'Read a file or specific line range from the session workspace.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Relative file path' },
-          startLine: { type: 'number', description: 'Start line (1-based, optional)' },
-          endLine: { type: 'number', description: 'End line (1-based, inclusive, optional)' },
-        },
-        required: ['path'],
-      },
-    },
-    {
-      name: 'write_file',
-      description:
-        'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Relative file path' },
-          content: { type: 'string', description: 'Content to write' },
-          startLine: { type: 'number', description: 'Start line for partial replace (1-based, optional)' },
-          endLine: { type: 'number', description: 'End line for partial replace (1-based, inclusive, optional)' },
-        },
-        required: ['path', 'content'],
-      },
-    },
-  ];
-}
-
-export async function executeToolCall(
-  fileService: FileService,
-  toolName: string,
-  args: Record<string, any>,
-): Promise<ToolCallResult> {
+export async function executeToolCall(fileService: FileService, toolName: string, args: Record<string, any>) {
   try {
     switch (toolName) {
       case 'read_file': {

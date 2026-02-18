@@ -33,18 +33,3 @@ export function parseMilestones(md: string): Milestones {
 
   return { title, items };
 }
-
-/**
- * Serialize structured milestones data to milestones.md format.
- */
-export function serializeMilestones(milestones: Milestones): string {
-  const lines: string[] = [`# 里程碑: ${milestones.title}`];
-  if (milestones.items.length > 0) {
-    lines.push('');
-    for (const item of milestones.items) {
-      const checkbox = item.completed ? '[x]' : '[ ]';
-      lines.push(`- ${checkbox} ${item.name}`);
-    }
-  }
-  return lines.join('\n');
-}

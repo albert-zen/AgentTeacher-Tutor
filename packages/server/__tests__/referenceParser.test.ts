@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseReferences, generateReference } from '../src/services/referenceParser.js';
+import { parseReferences } from '../src/services/referenceParser.js';
 
 describe('解析引用', () => {
   it('解析完整引用 [guidance.md:12:15]', () => {
@@ -32,17 +32,5 @@ describe('解析引用', () => {
   it('无引用时返回空数组', () => {
     const refs = parseReferences('这段话没有引用任何文件');
     expect(refs).toHaveLength(0);
-  });
-});
-
-describe('生成引用', () => {
-  it('从选区信息生成完整引用字符串', () => {
-    const ref = generateReference({ file: 'guidance.md', startLine: 3, endLine: 7 });
-    expect(ref).toBe('[guidance.md:3:7]');
-  });
-
-  it('仅文件名时不带行号', () => {
-    const ref = generateReference({ file: 'guidance.md' });
-    expect(ref).toBe('[guidance.md]');
   });
 });

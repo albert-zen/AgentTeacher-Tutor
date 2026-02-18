@@ -13,222 +13,40 @@
 - [x] P6: 发送按钮禁用态样式区分 + 停止按钮
 - [x] P14: ESLint + Prettier 配置
 - [x] Landing Page 重构：侧栏 + 仪表盘布局，Settings 模态框（Profile / System Prompt / LLM）
-
----
-
-## Tier 1: 体验基础（直接影响日常使用）
-
-### 面板自由拖拽调整大小
-
-**现状：** 文件树 `w-52`、聊天面板 `w-96` 均为固定宽度，编辑器占剩余空间。里程碑栏高度由内容撑开。
-
-**目标：** 文件树 | 编辑器 | 聊天面板三列之间可拖拽分割线调整宽度；里程碑栏与编辑器之间可拖拽调整高度。
-
-**工程要点：**
-- 实现通用 `ResizeHandle` 组件：监听 mousedown → mousemove → mouseup，计算偏移量
-- 用 CSS `cursor: col-resize` / `row-resize` 提示拖拽方向
-- 面板宽度存入 state（或 localStorage 持久化），替换固定 Tailwind class
-- 设置 `min-width` / `max-width` 防止面板被拖到不可用尺寸
-- 拖拽过程中需 `pointer-events: none` 覆盖层防止 iframe/selection 干扰
-
----
-
-### 里程碑栏折叠 + 进度条
-
-**现状：** MilestoneBar 始终展开显示所有里程碑 pill，无法收起。
-
-**目标：** 可折叠。收起状态下显示紧凑进度条，格式如 `学习进度 ███░░░░ 3/10`。
-
-**工程要点：**
-- 添加 `collapsed` state + 切换按钮（chevron 图标）
-- 收起态：单行，左侧标题，中间进度条（`<div>` 填充百分比），右侧 `completed/total`
-- 展开态：保持当前 pill 列表布局
-- 折叠状态可选持久化到 localStorage
-
----
-
-### LLM Provider 可配置 + 运行时切换
-
-**现状：** LLM 配置通过 `.env` 环境变量（`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`），修改需重启服务。
-
-**目标：** 配置存储为文件（如 `data/llm-config.json`），支持运行时切换 provider 无需重启。
-
-**工程要点：**
-- 配置格式：`{ provider, baseUrl, apiKey, model, temperature, ... }`
-- 服务端 `llm.ts`：按需读取配置文件创建 provider 实例，而非启动时固定绑定
-- 客户端：新增设置页面或弹窗，编辑配置并写回（通过 API 端点）
-- apiKey 安全：客户端仅显示掩码，写入时合并而非全量覆盖
-- 可选支持多 provider profile 快速切换
-
----
-
-### SSE 流中断恢复 + 消息重试
-
-**现状：** SSE 流断开后无恢复机制，消息发送失败无重试 UI，用户只能刷新页面。
-
-**目标：** 流式传输中断时自动重连或提示用户重试；发送失败的消息显示重试按钮。
-
-**工程要点：**
-- `useSession` 的 SSE 消费逻辑添加错误处理：网络断开 vs 服务端错误区分
-- 失败消息在 UI 上标红 + 显示"重试"按钮，点击重新发送
-- 可选：流中断后从最后一个 `text-delta` 断点续传（需服务端支持 event ID）
-- 基础方案先做"重试整条消息"，断点续传作为进阶
-
----
-
-### Writing 状态指示
-
-**现状：** Agent 通过 `write_file` 写入后，客户端一次性刷新。大文件写入期间编辑器无反馈。
-
-**目标：** Agent 写入当前打开文件时，编辑器展示 "Writing..." 状态指示；写入完成后刷新。
-
-**工程要点：**
-- 基础方案：`tool-call`（write_file 且目标 = activeFile）时在编辑器顶部显示状态条；`tool-result` 后移除并刷新
-- 进阶方案：SSE 携带 write_file 内容片段，编辑器实时追加显示
-- 进阶需改 `teacher.ts` 工具执行逻辑，将写入内容拆为流式 SSE
-
----
-
-### 聊天自动滚动智能暂停
-
-**现状：** `ChatPanel.tsx:208-210` 的 `useEffect` 在 `messages` 或 `streamingParts` 变化时无条件调用 `scrollIntoView({ behavior: 'smooth' })`。用户主动上滚查看历史消息时，新内容到达会强制拉回底部，打断阅读。
-
-**目标：** Agent 输出时自动滚动到底部（当前行为），但用户主动上滚后停止自动滚动。用户滚回底部时恢复自动滚动。
-
-**工程要点：**
-- 监听消息容器的 `scroll` 事件，判断是否在底部附近（`scrollTop + clientHeight >= scrollHeight - threshold`）
-- 用 `useRef` 维护 `isUserScrolledUp` 状态
-- `useEffect` 中仅在 `!isUserScrolledUp` 时执行 `scrollIntoView`
-- 可选：用户上滚时显示"↓ 新消息"浮动按钮，点击跳回底部
-
----
-
-### 代码块语法高亮
-
-**现状：** `MarkdownEditor.tsx` 和 `ChatPanel.tsx` 使用 `ReactMarkdown` + `remarkGfm` 渲染 Markdown，代码块（\`\`\`python 等）仅显示为等宽纯文本，无语法着色。
-
-**目标：** 代码块按语言语法高亮渲染，提升 Teacher Agent 输出代码示例时的可读性。
-
-**工程要点：**
-- 方案 A：`react-syntax-highlighter` + `prism`/`hljs` 主题，通过 ReactMarkdown 的 `components={{ code }}` 自定义渲染
-- 方案 B：`shiki`（更现代，主题丰富），但包体积较大
-- 方案 A 更轻量，推荐优先
-- 需同时应用到两个渲染点：`MarkdownEditor.tsx:74` 和 `ChatPanel.tsx:49/56`
-- 可提取共享的 `<MarkdownRenderer>` 组件避免重复配置
-- 主题选择：深色系（与 zinc-950 背景协调），如 `oneDark` 或 `vscDarkPlus`
-
----
-
-### 自由对话式开始学习
-
-**现状：** Landing Page 输入框 placeholder 为"输入你想学习的概念..."，要求用户输入精确概念名。`startSession(concept)` 将输入作为 session 标题（`Session.concept`），并自动拼接 `我想学习：${concept}` 作为首条消息发送（`useSession.ts:96`）。用户必须先明确自己要学什么才能开始。
-
-**目标：** 用户可以用任意自由文本开始——"我刚看到量子纠缠的视频但不太理解"、"帮我搞懂 useEffect 清理函数"、"什么是 CAP 定理？"都能直接创建 session。输入体验更像对话而非表单。
-
-**工程要点：**
-- Placeholder 改为开放文案，如"描述你想学的、想问的..."
-- `useSession.ts:96`：去掉 `我想学习：` 前缀，直接将用户原文作为首条消息
-- `Session.concept` 语义变更：暂时存用户原始输入（配合"标题自动摘要"后续优化）
-- Landing Page 输入框可改为 `<textarea>` 支持多行，Enter 发送 / Shift+Enter 换行
-- `SessionSidebar` 需适配长标题显示（`truncate` + `title` tooltip）
-- 服务端 `POST /api/session` 无需改动（`concept` 已接受任意字符串）
+- [x] 代码块语法高亮：共享 `MarkdownRenderer` 组件，Prism + oneDark 主题
+- [x] 聊天自动滚动智能暂停：`isNearBottomRef` + scroll 事件，用户上滚时停止自动滚动
+- [x] 自由对话式开始学习：textarea 输入，去掉 `我想学习：` 前缀，title tooltip
+- [x] 里程碑栏折叠 + 进度条：collapsed state + localStorage 持久化 + 进度条 UI
+- [x] 面板自由拖拽调整大小：`ResizeHandle` 组件，ref-based DOM 操作避免重渲染
+- [x] LLM Provider 运行时切换：`llm-config.json` 文件持久化，可编辑 UI 模态框，env fallback
+- [x] Writing 状态指示：`writingFile` state，编辑器顶部蓝色 spinner
+- [x] SSE 流中断恢复 + 消息重试：`failedMessage` state，红色重试条
+- [x] System Prompt 文件化 + 可编辑
+- [x] Session 级教学指令：`resolveSystemPrompt(dataDir, sessionId)` 追加 `session-prompt.md`，workspace 和 landing page 均可编辑
+- [x] Session 教学指令草稿模板：landing page 编辑 `session-prompt-draft.md`，创建新 session 时自动复制
+- [x] Session 标题自动摘要：首条消息后并行 LLM 调用生成 3-5 字标题，`updateSession` 更新
+- [x] 用户 Profile 分块 + 选择性注入：`profileParser` 按 `#` 分块，`/profile/blocks` 端点，tabbed UI
+- [x] 上下文编排器 Context Assembler 核心框架：`contextAssembler.ts` 纯函数，`context-preview` + `context-config` API
+- [x] 全局深色 scrollbar 样式（6px thin，zinc 色调）
+- [x] 流式处理中指示器（弹跳圆点 + "处理中" 文字）
+- [x] ChatPanel 输入性能优化（useMemo 缓存消息列表）
+- [x] 测试覆盖：56 → 150 tests（P0 SSE 聊天流 20 + P0 客户端状态机 16 + P1 数据层 14 + P2 补全 16 + session prompt 6 + context assembler 6 + profile parser 4）
 
 ---
 
 ## Tier 2: 上下文编排（项目核心差异化）
 
-### System Prompt 文件化 + 可编辑 `[完成]`
+### 上下文编排器 Phase 2：可见的上下文
 
-**现状：** Landing Page 已有 System Prompt 编辑模态框，可读写 `data/system-prompt.md`，默认提示词显示为 placeholder。`resolveSystemPrompt(dataDir)` 优先读取自定义文件，不存在或为空时 fallback 到内置默认。
+**现状：** Context Assembler 核心框架已完成。`assembleContext()` 纯函数汇集 system prompt + session 指令 + profile 分块。有 `context-preview` 和 `context-config` API。但用户端没有可视化面板来查看和选择上下文。
 
-**已完成：**
-- ✅ 编辑模态框（UI 读写 system-prompt.md）
-- ✅ 默认 prompt 作为 placeholder 显示
-- ✅ LLM 调用时使用自定义 prompt（`resolveSystemPrompt` in `llm.ts`）
-
----
-
-### Session 级教学指令（追加到 System Prompt）
-
-**现状：** `resolveSystemPrompt(dataDir)` 解析全局 system prompt，所有 session 共用。无法针对特定学习主题或学生状态添加额外指令。
-
-**目标：** 支持 session 级教学指令文件 `data/{sessionId}/session-prompt.md`。该内容**追加**到全局 system prompt 末尾（不替换），为当前 session 提供额外上下文（如"该学生有物理背景，多用公式推导"或"本 session 聚焦实践，少讲理论"）。
+**目标：** 用户可以在 workspace 中看到"模型将看到什么"，并手动调整。
 
 **工程要点：**
-- `resolveSystemPrompt(dataDir, sessionId?)` 增加可选参数：先解析全局 prompt，再读取 `data/{sessionId}/session-prompt.md`，存在则追加（`\n\n## Session 指令\n${content}`）
-- `session.ts` chat handler 传入 `session.id`
-- 客户端：workspace header 中添加 "教学指令" 按钮，点击弹出编辑模态框（复用 `Modal.tsx`）
-- API：复用现有 file 端点（`PUT /:sessionId/file` 写入 `session-prompt.md`），无需新增路由
-- UI 上区分"全局 prompt（Settings 里编辑）"与"本 session 指令（workspace 里编辑）"
-
----
-
-### Session 标题自动摘要
-
-**现状：** `Session.concept` 直接使用用户输入文本作为 session 标题。当前因为要求输入精确概念名所以标题简短可辨识，但若改为自由输入（见 Tier 1"自由对话式开始学习"），session 列表会出现长标题难以区分。
-
-**目标：** 自由输入开始 session 后，自动生成简洁标题摘要（如"我刚看到量子纠缠的视频但不太理解" → "量子纠缠"）。
-
-**工程要点：**
-- 用户首次发消息时触发两次并行 LLM 调用：一次正常 Teacher 响应，一次轻量标题生成（3-5 字摘要）
-- 标题生成调用完成后更新 `Session.concept`（`Store` 需新增 `updateSession(id, patch)`）
-- 客户端在 session 列表中截断显示作为 fallback（LLM 不可用时也能用）
-- 标题生成 prompt 极简：`"用3-5个字概括这个学习需求：${userMessage}"`
-- SSE 或轮询通知客户端标题已更新（或下次加载 session 列表时自然刷新）
-
----
-
-### 上下文编排器 (Context Assembler)
-
-**现状：** LLM 调用时的上下文组装散落在 `session.ts:67-98`（引用解析）和 `llm.ts:resolveSystemPrompt`（prompt 拼接），用户无法看到"模型实际会看到什么"，也无法选择哪些信息参与对话。一切皆文件的理念尚未体现为用户可操作的选择界面。
-
-**目标：** 用户可见的上下文选择中间层。用户主动勾选哪些文件片段/块参与当前对话，Assembler 汇集选中内容传给 LLM。这是项目"上下文编排器"愿景的核心实现。
-
-**可选择的上下文源（渐进扩展）：**
-- 个人 Profile 的分块（按 `#` 标题切分，勾选子集）
-- 全局 System Prompt 的分块
-- Session 级教学指令
-- 当前 session 的文件片段（`[file:startLine:endLine]`）
-- 历史 session 的内容（跨 session 引用，远期）
-
-**工程要点：**
-- 服务端：`services/contextAssembler.ts`——纯函数，输入为 `sessionDir` + 用户选择配置，输出为 `{ systemPrompt, contextBlocks }`
-- 选择配置存为 session 目录下的文件（如 `data/{sessionId}/context-config.json`），符合 everything-is-a-file
-- 文件分块解析器：通用的按 `#` 标题 / 自定义标签分块，提取 `{ id, name, content, source }` 对象
-- 客户端：上下文选择面板（workspace 侧边或抽屉），展示可用块 + 勾选状态
-- API：`GET /api/session/:id/context-preview` 预览模型即将看到的完整上下文（调试用）
-- 第一步：从 Profile 分块选择开始，验证整个链路，再扩展到其他源
-
----
-
-### 用户 Profile 分块 + 选择性注入
-
-**现状：** 有 `data/profile.md` 和基础的读写 API，但内容整体注入，无分块选择机制。
-
-**目标：** Profile 文件按标题分块，用户可按需勾选哪些块传给模型。不同 session 可选择不同子集。作为 Context Assembler 的第一个实际数据源。
-
-**文件格式示例：**
-```markdown
-# 基本信息
-25岁，计算机专业研究生
-
-# 学习目标
-深入理解分布式系统原理，准备面试
-
-# 已有基础
-熟悉 Go 和 Python，了解 CAP 定理基础概念
-
-# 偏好
-喜欢通过实际例子和类比学习，不喜欢纯理论推导
-```
-
-**工程要点：**
-- 解析器：按 `# 标题` 分块，每块提取为 `{ name, content }` 对象
-- 服务端：读取 profile 文件 → 解析分块 → 注入 system prompt（全部或用户选择的子集）
-- 客户端：Profile 编辑页面 + 块选择 UI（勾选哪些块本次生效）
-- API：`GET /api/profile/blocks` 返回解析后的块列表
-- 块选择状态存为 session 级别配置
-- 当前已有 `getProfile` / `updateProfile` API 端点，可复用扩展
+- 客户端：上下文预览面板（workspace 侧边或抽屉），调用 `context-preview` API 展示
+- Profile 块选择 UI 已有（ProfileModal 的"分块"tab），需接入 `context-config` 保存选择状态
+- 文件段落级选择：session 内文件也可按段落勾选
+- 实时预览：选择变化时重新请求 preview
 
 ---
 
@@ -378,50 +196,43 @@
 以下不是独立需求，而是随项目演进需持续关注的架构问题：
 
 - **Session 模型保持薄**：`Session` 只是目录指针（`{ id, concept, createdAt }`），所有丰富度来自 `data/{sessionId}/` 目录下的文件。新增能力 = 新增文件约定，不加 Session 字段，不做 schema migration。
-- **上下文编排器是核心**：Context Assembler（`services/contextAssembler.ts`）是项目的脊柱——用户选择哪些文件/块参与对话，Assembler 汇集并传给 LLM。所有上下文源（profile、prompt、session 文件、跨 session 引用）统一通过 Assembler 流入。
-- **存储层抽象**：当前 JSON 文件存储无锁无并发。单用户没问题，但多端同步（Electron + 移动端）前需要抽象存储接口（Store interface），方便后续切换到 SQLite 或云端存储。不需要现在就做，但新增存储逻辑时注意不要过度耦合 JSON 文件实现。
-- **客户端测试**：CLAUDE.md 要求 TDD，但客户端零测试。随着 Tier 1（面板拖拽）、Tier 4（内联 chips）等交互复杂功能的加入，缺少测试会越来越痛苦。建议在实现新的客户端功能时同步补测试，不需要补历史债。
-- **性能**：当前无明显瓶颈，但 session 文件数量增长后文件列表 API 可能变慢（`fs.readdir` + `stat`）。大量消息的 `messages.json` 全量读写也是潜在问题。留意，按需优化。
+- **上下文编排器是核心**：`contextAssembler.ts` 已实现核心框架，整合 system prompt + session 指令 + profile 分块。下一步是客户端可视化面板和更多上下文源接入。
+- **存储层抽象**：当前 JSON 文件存储无锁无并发。单用户没问题，但多端同步前需抽象 Store interface。`updateSession` 已新增。
+- **客户端测试已建立**：vitest + jsdom + @testing-library/react。`useSession` hook 16 tests，`streamChat` 6 tests。新功能应同步补测试。
+- **性能已优化**：面板拖拽用 ref + 直接 DOM（零重渲染），ChatPanel 输入用 useMemo 跳过消息列表重渲染。后续注意 session 文件数量增长时 API 性能。
 
 ---
 
 ## 依赖关系
 
 ```
-独立任务（可并行）:
-  面板拖拽调整大小
-  里程碑栏折叠 + 进度条
-  SSE 流中断恢复 + 消息重试
-  Writing 状态指示
-  多行选中 → 文件引用
-  自由对话式开始学习
-  聊天自动滚动智能暂停
-  代码块语法高亮
+已完成链:
+  ✅ System Prompt 文件化
+    ├→ ✅ LLM Provider 运行时切换
+    └→ ✅ Session 级教学指令 + 草稿模板
 
-有依赖链:
-  System Prompt 文件化 [完成]
-    ├→ LLM Provider 运行时切换（需 system prompt 文件化作为基础）
-    └→ Session 级教学指令（追加到全局 prompt）
+  ✅ 自由对话式开始学习
+    └→ ✅ Session 标题自动摘要
 
-  自由对话式开始学习
-    └→ Session 标题自动摘要（低优先级，需自由输入作为前提）
+  ✅ Context Assembler 核心框架
+    └→ ✅ 用户 Profile 分块
 
-  上下文编排器 (Context Assembler) ← 核心架构
-    └→ 用户 Profile 分块（第一个数据源）
-    └→ 后续扩展：prompt 分块、跨 session 引用...
+  ✅ Tier 1 全部 8 项完成
 
-  用户 Profile 分块 + 选择性注入
-    └→ 依赖现有 profile API（已有）
-    └→ 依赖 Context Assembler 框架
+待完成:
+  上下文编排器 Phase 2（可见的上下文面板）
+    └→ 依赖 ✅ Context Assembler 核心
 
-  Teacher Agent 互联网搜索
+  多行选中 → 文件引用（独立）
+
+  Teacher Agent 互联网搜索（独立）
     └→ 导出功能（搜索结果可纳入导出）
 
   视觉输入支持
     └→ 依赖多模态 LLM（模型层面）
 
   内联引用 chips（Tier 4）
-    └→ 需先稳定 多行选中 → 文件引用（Tier 2）
+    └→ 需先稳定 多行选中 → 文件引用
 
   聊天历史文件化 + Fork（Tier 4）
     └→ 多 Session 间共享文件 / 跨 Session 引用（Tier 3）

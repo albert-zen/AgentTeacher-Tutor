@@ -5,6 +5,7 @@ import ContinueCard from './ContinueCard';
 import SettingsCards from './SettingsCards';
 import ProfileModal from './ProfileModal';
 import SystemPromptModal from './SystemPromptModal';
+import SessionPromptModal from '../SessionPromptModal';
 import LLMConfigModal from './LLMConfigModal';
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
 
 export default function LandingPage({ sessions, onStart, onLoadSession }: Props) {
   const [conceptInput, setConceptInput] = useState('');
-  const [modal, setModal] = useState<'profile' | 'system-prompt' | 'llm' | null>(null);
+  const [modal, setModal] = useState<'profile' | 'system-prompt' | 'session-prompt' | 'llm' | null>(null);
 
   const handleStart = () => {
     const concept = conceptInput.trim();
@@ -79,6 +80,8 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
             <SettingsCards
               onOpenProfile={() => setModal('profile')}
               onOpenSystemPrompt={() => setModal('system-prompt')}
+              onOpenSessionPrompt={() => setModal('session-prompt')}
+              hasSession={sessions.length > 0}
               onOpenLLM={() => setModal('llm')}
             />
           </div>
@@ -88,6 +91,13 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
       {/* Modals */}
       <ProfileModal open={modal === 'profile'} onClose={() => setModal(null)} />
       <SystemPromptModal open={modal === 'system-prompt'} onClose={() => setModal(null)} />
+      {latestSession && (
+        <SessionPromptModal
+          sessionId={latestSession.id}
+          open={modal === 'session-prompt'}
+          onClose={() => setModal(null)}
+        />
+      )}
       <LLMConfigModal open={modal === 'llm'} onClose={() => setModal(null)} />
     </div>
   );

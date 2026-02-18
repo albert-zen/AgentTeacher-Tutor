@@ -12,14 +12,12 @@ import {
   streamTeacherResponse,
   resolveSystemPrompt,
   isLLMConfigured,
-  type LLMConfig,
+  loadLLMConfig,
 } from '../services/llm.js';
 import type { ModelMessage } from 'ai';
 
-export function createSessionRouter(store: Store, dataDir: string, llmConfig: LLMConfig) {
+export function createSessionRouter(store: Store, dataDir: string) {
   const router = Router();
-  const llmReady = isLLMConfigured(llmConfig);
-  const model = llmReady ? createLLMClient(llmConfig) : null;
 
   // List sessions
   router.get('/', (_req, res) => {
@@ -141,9 +139,10 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    if (!model) {
+    const currentConfig = loadLLMConfig(dataDir);
+    if (!isLLMConfigured(currentConfig)) {
       res.write(
-        `data: ${JSON.stringify({ type: 'text-delta', content: '[LLM 未配置] 请在 .env 中设置 LLM_API_KEY 后重启 server。当前可以正常使用文件管理、笔记编辑等功能。' })}\n\n`,
+        `data: ${JSON.stringify({ type: 'text-delta', content: '[LLM 未配置] 请在设置中配置模型，或在 .env 中设置 LLM_API_KEY。当前可以正常使用文件管理、笔记编辑等功能。' })}\n\n`,
       );
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
@@ -151,6 +150,7 @@ export function createSessionRouter(store: Store, dataDir: string, llmConfig: LL
     }
 
     try {
+      const model = createLLMClient(currentConfig);
       const result = await streamTeacherResponse(model, fileService, llmMessages, resolveSystemPrompt(dataDir));
 
       let fullText = '';

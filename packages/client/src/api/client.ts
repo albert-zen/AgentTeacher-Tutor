@@ -116,6 +116,19 @@ export async function getProfileBlocks(): Promise<ProfileBlock[]> {
   return res.json();
 }
 
+export async function getSessionPromptDraft(): Promise<FileContent> {
+  const res = await fetch(`${BASE}/session-prompt-draft`);
+  return res.json();
+}
+
+export async function updateSessionPromptDraft(content: string): Promise<void> {
+  await fetch(`${BASE}/session-prompt-draft`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+}
+
 export async function getSystemPrompt(): Promise<FileContent & { defaultContent: string }> {
   const res = await fetch(`${BASE}/system-prompt`);
   return res.json();

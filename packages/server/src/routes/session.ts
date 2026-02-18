@@ -49,6 +49,16 @@ export function createSessionRouter(store: Store, dataDir: string) {
       createdAt: new Date().toISOString(),
     };
     store.createSession(session);
+
+    // Copy session-prompt-draft into the new session if it exists
+    const draftPath = join(dataDir, 'session-prompt-draft.md');
+    if (existsSync(draftPath)) {
+      const draft = readFileSync(draftPath, 'utf-8').trim();
+      if (draft) {
+        writeFileSync(join(dataDir, session.id, 'session-prompt.md'), draft);
+      }
+    }
+
     res.json(session);
   });
 

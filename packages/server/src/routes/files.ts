@@ -123,6 +123,25 @@ export function createFilesRouter(store: Store, dataDir: string) {
     res.json({ success: true });
   });
 
+  // Session prompt draft (template for new sessions)
+  router.get('/session-prompt-draft', (_req, res) => {
+    const draftPath = join(dataDir, 'session-prompt-draft.md');
+    if (!existsSync(draftPath)) {
+      res.json({ content: '', totalLines: 0 });
+      return;
+    }
+    const svc = new FileService(dataDir);
+    const result = svc.readFile({ path: 'session-prompt-draft.md' });
+    res.json(result);
+  });
+
+  router.put('/session-prompt-draft', (req, res) => {
+    const { content } = req.body;
+    const svc = new FileService(dataDir);
+    svc.writeFile({ path: 'session-prompt-draft.md', content });
+    res.json({ success: true });
+  });
+
   // Global system prompt
   router.get('/system-prompt', (_req, res) => {
     const defaultContent = getDefaultSystemPrompt();

@@ -165,6 +165,25 @@ export async function getSessionMilestones(sessionId: string): Promise<Milestone
   return res.json();
 }
 
+export interface ContextPreview {
+  systemPrompt: string;
+  profileBlocks: ProfileBlock[];
+  selectedProfileContent: string;
+}
+
+export async function getContextPreview(sessionId: string): Promise<ContextPreview> {
+  const res = await fetch(`${BASE}/session/${sessionId}/context-preview`);
+  return res.json();
+}
+
+export async function updateContextConfig(sessionId: string, config: { profileBlockIds?: string[] }): Promise<void> {
+  await fetch(`${BASE}/session/${sessionId}/context-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+}
+
 export interface SSEEvent {
   type: 'text-delta' | 'tool-call' | 'tool-result' | 'done' | 'error';
   content?: string;

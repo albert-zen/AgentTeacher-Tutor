@@ -1,19 +1,14 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { Session, ChatMessage, FileReference, ToolEvent, MessagePart } from '../types.js';
 import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
 import { parseMilestones } from '../services/milestonesParser.js';
-import {
-  createLLMClient,
-  streamTeacherResponse,
-  resolveSystemPrompt,
-  isLLMConfigured,
-  loadLLMConfig,
-} from '../services/llm.js';
+import { createLLMClient, streamTeacherResponse, isLLMConfigured, loadLLMConfig } from '../services/llm.js';
+import { assembleContext } from '../services/contextAssembler.js';
 import { generateText, type ModelMessage } from 'ai';
 
 async function generateTitle(dataDir: string, store: Store, sessionId: string, userMessage: string) {
@@ -173,12 +168,12 @@ export function createSessionRouter(store: Store, dataDir: string) {
 
     try {
       const model = createLLMClient(currentConfig);
-      const result = await streamTeacherResponse(
-        model,
-        fileService,
-        llmMessages,
-        resolveSystemPrompt(dataDir, session.id),
-      );
+      const context = assembleContext(dataDir, session.id);
+      let fullSystemPrompt = context.systemPrompt;
+      if (context.selectedProfileContent) {
+        fullSystemPrompt += `\n\n## 学生 Profile\n${context.selectedProfileContent}`;
+      }
+      const result = await streamTeacherResponse(model, fileService, llmMessages, fullSystemPrompt);
 
       let fullText = '';
       const toolEvents: ToolEvent[] = [];
@@ -237,6 +232,40 @@ export function createSessionRouter(store: Store, dataDir: string) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
       res.end();
     }
+  });
+
+  // Context preview
+  router.get('/:id/context-preview', (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    let config = undefined;
+    const configPath = join(dataDir, session.id, 'context-config.json');
+    if (existsSync(configPath)) {
+      try {
+        config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      } catch {
+        /* use defaults */
+      }
+    }
+
+    const context = assembleContext(dataDir, session.id, config);
+    res.json(context);
+  });
+
+  // Save context config
+  router.put('/:id/context-config', (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    const configPath = join(dataDir, session.id, 'context-config.json');
+    writeFileSync(configPath, JSON.stringify(req.body, null, 2));
+    res.json({ success: true });
   });
 
   // Get session milestones progress

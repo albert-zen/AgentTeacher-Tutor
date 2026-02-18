@@ -1,342 +1,461 @@
 # Test Specification (EARS)
 
 > **EARS** = Easy Approach to Requirements Specification
-> 每条声明直接映射为一个 `it('...')` 测试用例。
-> `[✅ N tests]` = 已有测试覆盖 · `[current]` = 待补 · `[future]` = 随架构演进实现
+> 每条声明映射为一个 `it('...')` 测试用例，定义系统的行为契约。
+>
+> 标记：`✅` 已有测试 · `todo` 当前代码需补 · `future` 功能未实现
+>
+> EARS 模式：
+> - **U** (Ubiquitous) — "The system **shall** ..." — 始终成立的不变量
+> - **E** (Event-driven) — "**When** X, the system **shall** ..." — 对事件的响应
+> - **S** (State-driven) — "**While** X, the system **shall** ..." — 状态依赖的行为
+> - **X** (Unwanted) — "**If** X, **then** the system **shall** ..." — 错误/边界防护
 
 ---
 
 ## Server
 
-### S1. FileService — 沙箱文件 I/O `[✅ 22 tests]`
+---
 
+### 1. 沙箱文件系统 `[✅ 22 tests]`
+
+> `services/fileService.ts` — 所有文件操作限定在 session 目录内
 > `packages/server/__tests__/fileService.test.ts`
 
-**已覆盖：** 全文件读写、行范围读写、路径遍历防护、自动建目录、尾换行处理、边界行号校验。
+#### 写入
 
-**待补：**
-- X1 `[current]` If the file path contains null bytes or OS-reserved names, then FileService shall reject the operation
-- E1 `[future]` When reading a binary file (image), FileService shall return raw buffer or error (视觉输入支持前置)
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When `writeFile` is called with a new path, FileService shall create the file and write full content | ✅ |
+| E2 | When `writeFile` is called without line numbers on an existing file, FileService shall overwrite the entire file | ✅ |
+| E3 | When `writeFile` is called with `startLine`/`endLine`, FileService shall replace only those lines, preserving the rest | ✅ |
+| E4 | When `writeFile` targets a path in a non-existent subdirectory, FileService shall auto-create intermediate directories | ✅ |
+
+#### 读取
+
+| # | EARS | 状态 |
+|---|------|------|
+| E5 | When `readFile` is called without line numbers, FileService shall return full content and `totalLines` | ✅ |
+| E6 | When `readFile` is called with `startLine`/`endLine`, FileService shall return only those lines | ✅ |
+
+#### 安全边界
+
+| # | EARS | 状态 |
+|---|------|------|
+| X1 | If the file path attempts directory traversal (`../`), then FileService shall reject the operation | ✅ |
+| X2 | If `readFile` targets a non-existent file, then it shall throw | ✅ |
+| X3 | If `endLine` exceeds file length, then `writeFile` shall throw | ✅ |
+| X4 | If `startLine > endLine`, then `writeFile` shall throw | ✅ |
+
+#### 尾换行一致性
+
+| # | EARS | 状态 |
+|---|------|------|
+| U1 | FileService shall preserve trailing newline semantics across read→write→read cycles (10 edge-case variations) | ✅ |
 
 ---
 
-### S2. Reference Parser `[✅ 8 tests]`
+### 2. 引用解析 `[✅ 8 tests]`
 
+> `services/referenceParser.ts` — 解析和生成 `[file:start:end]` 引用
 > `packages/server/__tests__/referenceParser.test.ts`
 
-**已覆盖：** 完整引用、仅文件名、多引用提取、非法格式、子目录路径、空输入、引用生成。
-
-**待补：**
-- E1 `[future]` When parsing `[session:id/file:start:end]`, the parser shall recognize cross-session references
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When text contains `[file.md:12:15]`, the parser shall extract `{ file, startLine, endLine }` | ✅ |
+| E2 | When text contains `[file.md]` (no line numbers), the parser shall extract `{ file }` only | ✅ |
+| E3 | When text contains multiple references, the parser shall extract all of them in order | ✅ |
+| E4 | When text contains subdirectory paths like `[notes/draft.md:1:3]`, the parser shall parse correctly | ✅ |
+| E5 | When generating a reference from selection info, the parser shall produce the `[file:start:end]` string | ✅ |
+| X1 | If the format is invalid, then the parser shall ignore it | ✅ |
+| X2 | If the input is empty, then the parser shall return an empty array | ✅ |
 
 ---
 
-### S3. Milestones Parser `[✅ 8 tests]`
+### 3. 里程碑解析 `[✅ 8 tests]`
 
+> `services/milestonesParser.ts` — 解析 `- [x]`/`- [ ]` checkbox 格式
 > `packages/server/__tests__/milestonesParser.test.ts`
 
-**已覆盖：** 标题解析、完成/未完成、空文件、大写 X、非 checkbox 行跳过、序列化、round-trip。
-
-**状态：完整覆盖，无需补充。**
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When parsing milestones.md, the parser shall extract title and all items with completion status | ✅ |
+| E2 | When `[X]` (uppercase) is used, the parser shall treat it as completed | ✅ |
+| E3 | When serializing milestones, the parser shall produce valid markdown content | ✅ |
+| U1 | The parser shall support serialize→parse round-trip without data loss | ✅ |
+| X1 | If the file is empty, then the parser shall return empty title and empty items | ✅ |
+| X2 | If a line has no checkbox format, then the parser shall skip it | ✅ |
 
 ---
 
-### S4. Teacher Tools `[✅ 7 tests]`
+### 4. 工具执行层 `[✅ 7 tests]`
 
+> `services/teacher.ts` — 工具分发，FileService 的安全代理
 > `packages/server/__tests__/teacherTools.test.ts`
 
-**已覆盖：** 工具 schema 定义、read/write 执行、路径安全防护、未知工具错误。
-
-**待补：**
-- E1 `[future]` When `web_search` tool is called, it shall return search results within rate limits
-- E2 `[future]` When `fetch_url` tool is called, it shall return markdown-converted content
-
----
-
-### S5. Routes — Settings `[✅ 8 tests]`
-
-> `packages/server/__tests__/routes.test.ts`
-
-**已覆盖：** system-prompt GET/PUT、llm-status 配置/未配置、milestones 有/无/404、resolveSystemPrompt 三分支。
-
-**待补：**
-- E1 `[current]` When `GET /api/profile` is called with no profile.md, the route shall return empty content
-- E2 `[current]` When `PUT /api/profile` is called, the route shall save and return success
+| # | EARS | 状态 |
+|---|------|------|
+| U1 | `read_file` and `write_file` tool definitions shall have correct parameter schemas matching `inputSchema` in `llm.ts` | ✅ |
+| E1 | When `executeToolCall` is called with `write_file` (no line numbers), it shall create the file via FileService | ✅ |
+| E2 | When `executeToolCall` is called with `write_file` (with line numbers), it shall modify only specified lines | ✅ |
+| E3 | When `executeToolCall` is called with `read_file`, it shall return file content via FileService | ✅ |
+| X1 | If the path is outside the session directory, then `executeToolCall` shall return `{ success: false }` | ✅ |
+| X2 | If an unknown tool name is provided, then `executeToolCall` shall return an error | ✅ |
 
 ---
 
-### S6. Routes — Session CRUD `[✅ 3 tests (间接)]`
+### 5. 系统提示词解析 `[✅ 3 tests]`
 
-> Session 创建在 milestones 测试中间接覆盖，无独立测试。
+> `services/llm.ts:resolveSystemPrompt` — 自定义 prompt 优先，fallback 到内置默认
+> 测试在 `packages/server/__tests__/routes.test.ts`
 
-#### Ubiquitous
-- U1 `[current]` The session list endpoint shall return all sessions ordered by creation time
-
-#### Event-driven
-- E1 `[current]` When `POST /api/session` is called with `{ concept }`, the route shall create a session with UUID and return it
-- E2 `[current]` When `GET /api/session/:id` is called, the route shall return the session and its messages
-- E3 `[current]` When `POST /api/session` is called without concept, the route shall return 400
-- E4 `[current]` When `GET /api/session/:id` is called with invalid ID, the route shall return 404
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When `system-prompt.md` exists with content, `resolveSystemPrompt` shall return the custom content | ✅ |
+| E2 | When `system-prompt.md` does not exist, `resolveSystemPrompt` shall return the built-in default | ✅ |
+| X1 | If `system-prompt.md` is empty or whitespace-only, then `resolveSystemPrompt` shall fall back to the built-in default | ✅ |
 
 ---
 
-### S7. Routes — Chat SSE
+### 6. 数据存储 `[todo]`
 
-> 核心端点，目前零直接测试。需 mock LLM 响应。
+> `db/index.ts` — Store class，JSON 文件持久化 Session 和 Message
+> 建议测试文件：`packages/server/__tests__/store.test.ts`
 
-#### Event-driven
-- E1 `[current]` When `POST /api/session/:id/chat` is called with a message, the route shall save the user message and begin SSE streaming
-- E2 `[current]` When the message contains `[file:start:end]` references, the route shall resolve them via FileService and append to user content
-- E3 `[current]` When explicit references are provided in the body, the route shall merge them with inline references
-- E4 `[current]` When LLM is not configured, the route shall return a Chinese error message via SSE and end
-
-#### State-driven
-- S1 `[current]` While LLM is streaming, the route shall forward `text-delta`, `tool-call`, `tool-result` events as SSE
-- S2 `[current]` While tool calls are happening, the route shall accumulate ordered `MessagePart[]` for the assistant message
-
-#### Unwanted
-- X1 `[current]` If the LLM throws during streaming, then the route shall send an SSE error event and end the response
-- X2 `[current]` If the session does not exist, then the route shall return 404 (not start SSE)
-
----
-
-### S8. resolveSystemPrompt `[✅ 3 tests]`
-
-**已覆盖：** 无文件→默认、有文件→自定义、空文件→默认。
-
-**待补：**
-- E1 `[future]` When `resolveSystemPrompt(dataDir, sessionId)` is called with a session that has `session-prompt.md`, the function shall append its content to the global prompt
-- X1 `[future]` If `session-prompt.md` is corrupted, then the function shall use only the global prompt without crashing
+| # | EARS | 状态 |
+|---|------|------|
+| U1 | The Store shall create the data directory on construction if it does not exist | todo |
+| E1 | When `createSession` is called, the Store shall persist the session to `sessions.json` and create the session subdirectory | todo |
+| E2 | When `getSessions` is called, the Store shall return all persisted sessions | todo |
+| E3 | When `getSession(id)` is called, the Store shall return the matching session | todo |
+| E4 | When `addMessage` is called, the Store shall append the message to `{sessionId}/messages.json` | todo |
+| E5 | When `getMessages(sessionId)` is called, the Store shall return all messages for that session | todo |
+| X1 | If `sessions.json` does not exist, then `getSessions` shall return `[]` | todo |
+| X2 | If `messages.json` does not exist, then `getMessages` shall return `[]` | todo |
+| X3 | If `getSession` is called with a non-existent ID, then it shall return `undefined` | todo |
 
 ---
 
-### S9. Context Assembler `[future]`
+### 7. Session 生命周期 `[todo]`
 
-> `services/contextAssembler.ts` — 核心架构组件
+> `routes/session.ts` CRUD 部分 — 创建、查询、列表
+> 建议测试文件：`packages/server/__tests__/sessionRoutes.test.ts`
 
-#### Ubiquitous
-- U1 `[future]` The assembler shall always include the resolved system prompt (global + session) regardless of user selection
-- U2 `[future]` The assembler output shall be deterministic: same config + same files = same result
-
-#### Event-driven
-- E1 `[future]` When a context config selects specific profile blocks, the assembler shall include only those blocks
-- E2 `[future]` When a context config selects file segments, the assembler shall read and include those line ranges
-- E3 `[future]` When `GET /api/session/:id/context-preview` is called, the route shall return the full assembled context
-- E4 `[future]` When no context config exists, the assembler shall use sensible defaults (full profile, system prompt only)
-
-#### Unwanted
-- X1 `[future]` If a referenced file in the config no longer exists, then the assembler shall skip it and continue
-- X2 `[future]` If the assembled context exceeds a token limit, then the assembler shall warn (not silently truncate)
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When `POST /api/session` is called with `{ concept }`, the route shall create a session with UUID, persist it, and return the session object | todo |
+| E2 | When `GET /api/session` is called, the route shall return all sessions | todo |
+| E3 | When `GET /api/session/:id` is called with a valid ID, the route shall return `{ session, messages }` | todo |
+| X1 | If `POST /api/session` is called without `concept` or with non-string `concept`, then the route shall return 400 | todo |
+| X2 | If `GET /api/session/:id` is called with a non-existent ID, then the route shall return 404 | todo |
 
 ---
 
-### S10. Title Summary `[future]`
+### 8. SSE 聊天流 ★ `[todo]`
 
-- E1 `[future]` When the first user message is sent, the server shall trigger a parallel LLM call to generate a 3-5 character title
-- E2 `[future]` When the title LLM call completes, the server shall update `Session.concept` via `store.updateSession()`
-- X1 `[future]` If the title LLM call fails, then the session concept shall remain as the original user input
+> `routes/session.ts:57-213` — `POST /:id/chat`，核心数据通道，**零覆盖**
+> 建议测试文件：`packages/server/__tests__/chatSSE.test.ts`
+> 需 mock `streamTeacherResponse` 以控制 LLM 输出
+
+这是整个系统的脊柱：用户消息 → 引用解析 → LLM 流式响应 → 工具调用 → 文件变更 → SSE 事件。
+
+#### 请求验证
+
+| # | EARS | 状态 |
+|---|------|------|
+| X1 | If the session does not exist, then the chat route shall return 404 (not start SSE) | todo |
+| X2 | If `message` is missing or not a string, then the chat route shall return 400 | todo |
+
+#### 引用解析
+
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When the message contains `[file:start:end]` inline references, the route shall read referenced files via FileService and append their content to `userContent` | todo |
+| E2 | When the request body contains explicit `references[]` with `content`, the route shall append them to `userContent` | todo |
+| E3 | When both inline and explicit references exist, the route shall merge them into a single `allRefs` array on the saved user message | todo |
+| X3 | If an inline-referenced file does not exist, then the route shall skip it silently (not fail the request) | todo |
+
+#### 消息持久化
+
+| # | EARS | 状态 |
+|---|------|------|
+| E4 | When a chat request is received, the route shall save the user message (with original text, not resolved content) via `store.addMessage` | todo |
+| E5 | When the LLM stream completes with text content or tool events, the route shall save an assistant message with `{ content, toolEvents, parts }` | todo |
+| X4 | If the LLM response has no text and no tool events, then the route shall not save an assistant message | todo |
+
+#### LLM 未配置
+
+| # | EARS | 状态 |
+|---|------|------|
+| E6 | When LLM is not configured (`model === null`), the route shall send a Chinese error text-delta and a done event via SSE, then end | todo |
+
+#### 流式事件转发
+
+| # | EARS | 状态 |
+|---|------|------|
+| S1 | While the LLM emits `text-delta` parts, the route shall forward each as an SSE `text-delta` event | todo |
+| S2 | While the LLM emits `tool-call` parts, the route shall forward each as an SSE `tool-call` event with `toolName` and `args` | todo |
+| S3 | While the LLM emits `tool-result` parts, the route shall forward each as an SSE `tool-result` event with `toolName` and `result` | todo |
+| E7 | When the LLM emits a `reasoning-delta` part, the route shall skip it (not forward to client) | todo |
+| U1 | The SSE response shall set `Content-Type: text/event-stream` and end with a `done` event | todo |
+
+#### Part 累积逻辑
+
+> `session.ts:159-190` — 连续 `text-delta` 合并为一个 text part，`tool-call`/`tool-result` 打断合并
+
+| # | EARS | 状态 |
+|---|------|------|
+| S4 | While consecutive `text-delta` events arrive, the route shall merge them into a single `{ type: 'text' }` part in the parts array | todo |
+| E8 | When a `tool-call` event arrives after text, the route shall start a new part (breaking the current text merge) | todo |
+| E9 | When a `tool-result` event arrives, the route shall start a new part (breaking the current text merge) | todo |
+
+#### 错误处理
+
+| # | EARS | 状态 |
+|---|------|------|
+| X5 | If the LLM throws during streaming, then the route shall send an SSE `error` event with the error message and end | todo |
+
+---
+
+### 9. 设置与文件路由 `[✅ 8 + todo]`
+
+> `routes/files.ts` — 文件 CRUD、Profile、System Prompt、LLM Status
+> 已有测试在 `packages/server/__tests__/routes.test.ts`
+> 补充测试建议加入同一文件
+
+#### System Prompt `[✅ 3]`
+
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When `GET /api/system-prompt` is called and file exists, the route shall return `{ content, totalLines, defaultContent }` | ✅ |
+| E2 | When `GET /api/system-prompt` is called and file is absent, the route shall return `{ content: '', totalLines: 0, defaultContent }` | ✅ |
+| E3 | When `PUT /api/system-prompt` is called with `{ content }`, the route shall write the file and return `{ success: true }` | ✅ |
+
+#### LLM Status `[✅ 2]`
+
+| # | EARS | 状态 |
+|---|------|------|
+| E4 | When `GET /api/llm-status` is called and `apiKey` is set, the route shall return `{ configured: true, provider, model, baseURL }` | ✅ |
+| E5 | When `GET /api/llm-status` is called and `apiKey` is empty, the route shall return `{ configured: false, ... }` | ✅ |
+| U1 | The `llm-status` response shall never include `apiKey` | ✅ (implicit) |
+
+#### Milestones `[✅ 3]`
+
+| # | EARS | 状态 |
+|---|------|------|
+| E6 | When `GET /session/:id/milestones` is called and `milestones.md` exists, the route shall return `{ total, completed }` | ✅ |
+| E7 | When `GET /session/:id/milestones` is called and `milestones.md` is absent, the route shall return `{ total: 0, completed: 0 }` | ✅ |
+| X1 | If the session does not exist, then the milestones route shall return 404 | ✅ |
+
+#### Profile `[todo]`
+
+| # | EARS | 状态 |
+|---|------|------|
+| E8 | When `GET /api/profile` is called and `profile.md` exists, the route shall return `{ content, totalLines }` | todo |
+| E9 | When `GET /api/profile` is called and `profile.md` is absent, the route shall return `{ content: '', totalLines: 0 }` | todo |
+| E10 | When `PUT /api/profile` is called with `{ content }`, the route shall write `profile.md` and return `{ success: true }` | todo |
+
+#### File CRUD `[todo]`
+
+| # | EARS | 状态 |
+|---|------|------|
+| E11 | When `GET /:sessionId/files` is called, the route shall return all files recursively, excluding `messages.json` and dotfiles | todo |
+| E12 | When `GET /:sessionId/file?path=` is called, the route shall return `{ content, totalLines }` | todo |
+| E13 | When `PUT /:sessionId/file` is called with `{ path, content }`, the route shall write the file | todo |
+| E14 | When `DELETE /:sessionId/file?path=` is called, the route shall remove the file | todo |
+| X2 | If `GET /:sessionId/files` targets a non-existent directory, then it shall return 404 | todo |
+| X3 | If `GET /:sessionId/file` is called without `path` param, then it shall return 400 | todo |
+| X4 | If `DELETE` targets a non-existent file, then it shall return 404 | todo |
 
 ---
 
 ## Client
 
-### C1. useSession Hook
+---
 
-> 核心状态机：null → session → streaming → done。零测试。
+### 10. SSE 流解析 `[todo]`
 
-#### Ubiquitous
-- U1 `[current]` The hook shall expose `{ session, messages, files, streaming, streamingParts }`
-- U2 `[current]` The hook shall never have `streaming === true` when `session === null`
-- U3 `[current]` The hook shall reset all state when `clearSession` is called
+> `api/client.ts:152-191` — `streamChat` 手动解析 SSE（非 EventSource API）
+> 建议测试文件：`packages/client/__tests__/streamChat.test.ts`
 
-#### Event-driven
-- E1 `[current]` When `startSession(text)` is called, the hook shall create a session via API and send the text as the first message
-- E2 `[current]` When `loadSession(id)` is called, the hook shall fetch session data and populate messages and files
-- E3 `[current]` When `send(message, refs)` is called, the hook shall optimistically add a user message and begin SSE streaming
-- E4 `[current]` When a `tool-result` SSE event arrives, the hook shall refresh the file list
-- E5 `[current]` When a `done` SSE event arrives, the hook shall save the assistant message and set streaming to false
-- E6 `[current]` When `stopStreaming` is called, the hook shall abort the SSE connection and reset streaming state
+这是客户端唯一有复杂逻辑的 API 函数。其余 REST 函数都是 `fetch` → `.json()` 的直通管道，不值得单独测试。
 
-#### Unwanted
-- X1 `[current]` If `send` is called with no active session, then the hook shall no-op
-- X2 `[current]` If the SSE stream emits an `error` event, then the hook shall stop streaming without corrupting state
-- X3 `[current]` If `startSession` API call fails, then the hook shall not update session state
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When `streamChat` is called, it shall POST to `/api/session/:id/chat` and return an `AbortController` | todo |
+| E2 | When SSE `data: {...}` lines arrive, the client shall JSON-parse each and invoke `onEvent` with the parsed object | todo |
+| E3 | When data arrives in partial chunks across `reader.read()` calls, the client shall buffer incomplete lines and only parse complete ones | todo |
+| E4 | When multiple `data:` lines arrive in a single chunk, the client shall parse and dispatch each event separately | todo |
+| X1 | If a `data:` line contains invalid JSON, then the client shall skip it without throwing | todo |
+| X2 | If the stream is aborted via `AbortController`, then the client shall stop reading without unhandled errors | todo |
 
 ---
 
-### C2. API Client
+### 11. 会话状态机 ★ `[todo]`
 
-#### Event-driven
-- E1 `[current]` When `createSession(concept)` is called, the client shall POST and return the session object
-- E2 `[current]` When `streamChat` is called, the client shall open SSE and invoke callback for each parsed event
-- E3 `[current]` When `getSystemPrompt()` is called, the client shall return `{ content, totalLines, defaultContent }`
-- E4 `[future]` When `getContextPreview(sessionId)` is called, the client shall return the assembled context
+> `hooks/useSession.ts` — 客户端核心状态管理
+> 建议测试文件：`packages/client/__tests__/useSession.test.ts`
 
-#### Unwanted
-- X1 `[current]` If a REST call returns non-OK status, then the client shall throw with the error message
-- X2 `[current]` If SSE is aborted via AbortController, then the client shall clean up without throwing
+客户端最有价值的测试目标。这个 hook 是整个前端的"中枢神经"——管理 session 生命周期、消息流、文件列表、SSE 流式状态。
 
----
+#### 不变量
 
-### C3. App.tsx — Page Router
+| # | EARS | 状态 |
+|---|------|------|
+| U1 | The hook shall expose `{ session, messages, files, streaming, streamingParts, startSession, loadSession, send, clearSession, stopStreaming, refreshFiles }` | todo |
+| U2 | `refreshFiles` shall filter out `messages.json` from the returned file list | todo |
 
-#### State-driven
-- S1 `[current]` While no session is active, App shall render Landing Page
-- S2 `[current]` While a session is active, App shall render Workspace
+#### 创建会话
 
-#### Event-driven
-- E1 `[current]` When a session is started from Landing Page, App shall transition to Workspace
-- E2 `[current]` When "← Sessions" is clicked, App shall clear session and return to Landing Page
-- E3 `[current]` When files refresh (tool-result), App shall reload the active file content
+| # | EARS | 状态 |
+|---|------|------|
+| E1 | When `startSession(concept)` is called, the hook shall create a session via `api.createSession`, update `session` state, and send the first message with `我想学习：${concept}` prefix | todo |
+| E2 | When `startSession` succeeds, the hook shall clear `messages` and `files` before starting | todo |
 
----
+#### 加载会话
 
-### C4. Landing Page
+| # | EARS | 状态 |
+|---|------|------|
+| E3 | When `loadSession(id)` is called, the hook shall fetch session data via `api.getSession`, set `session` and `messages`, and refresh the file list | todo |
 
-#### Event-driven
-- E1 `[current]` When user submits non-empty input, the page shall call `onStart` with trimmed text
-- E2 `[current]` When user presses Enter, the page shall submit
-- E3 `[current]` When user clicks a session, the page shall call `onLoadSession`
-- E4 `[current]` When user clicks a settings card, the corresponding modal shall open
+#### 发送消息
 
-#### State-driven
-- S1 `[current]` While input is empty, the submit button shall be disabled
-- S2 `[current]` While no sessions exist, the "继续学习" card shall not render
+| # | EARS | 状态 |
+|---|------|------|
+| E4 | When `send(message, refs)` is called, the hook shall set `streaming=true`, optimistically add a user `ChatMessage` to `messages`, and open SSE via `api.streamChat` | todo |
 
----
+#### SSE 事件处理
 
-### C5. ChatPanel
+> `useSession.ts:44-83` — 与 `session.ts:161-190` 的 part 累积逻辑镜像
 
-#### Event-driven
-- E1 `[current]` When user sends a message, the panel shall call `onSend` with text and attachments
-- E2 `[current]` When user pastes matching copy source, the panel shall create a file-ref attachment
-- E3 `[current]` When user presses Backspace in empty input, the panel shall remove the last attachment
-- E4 `[future]` When user scrolls up manually, the panel shall stop auto-scrolling
-- E5 `[future]` When user scrolls back to bottom, the panel shall resume auto-scrolling
+| # | EARS | 状态 |
+|---|------|------|
+| E5 | When a `text-delta` event arrives, the hook shall accumulate text and update `streamingParts`（连续 text-delta 合并为一个 text part） | todo |
+| E6 | When a `tool-call` event arrives, the hook shall add a tool-call part to `streamingParts` and break the current text merge | todo |
+| E7 | When a `tool-result` event arrives, the hook shall add a tool-result part to `streamingParts` and call `refreshFiles` | todo |
+| E8 | When a `done` event arrives, the hook shall construct an assistant `ChatMessage` (with parts), append it to `messages`, clear `streamingParts`, and set `streaming=false` | todo |
+| E9 | When a `done` event arrives, the hook shall refresh the file list | todo |
 
-#### State-driven
-- S1 `[current]` While streaming, the panel shall show partial message and a stop button
-- S2 `[current]` While not streaming with empty input, send button shall be visually disabled
-- S3 `[future]` While user has scrolled up, the panel shall show a "↓ 新消息" floating button
+#### 停止与清除
 
-#### Unwanted
-- X1 `[current]` If send is called with empty text and no attachments, then onSend shall not be invoked
+| # | EARS | 状态 |
+|---|------|------|
+| E10 | When `stopStreaming` is called, the hook shall abort the SSE connection (`abortRef.current.abort()`) and set `streaming=false`, clear `streamingParts` | todo |
+| E11 | When `clearSession` is called, the hook shall abort any active stream and reset all state (`session=null, messages=[], files=[], streaming=false, streamingParts=[]`) | todo |
 
----
+#### 防护
 
-### C6. Session Sidebar
-
-#### Event-driven
-- E1 `[current]` When user types in search, sidebar shall filter sessions case-insensitively
-- E2 `[current]` When collapse button is clicked, sidebar shall toggle and persist to localStorage
-
-#### State-driven
-- S1 `[current]` While collapsed, sidebar shall show only the expand chevron (w-10)
-- S2 `[current]` While expanded, sidebar shall show search + session list (w-52)
+| # | EARS | 状态 |
+|---|------|------|
+| X1 | If `send` is called when `session` is null, then the hook shall no-op | todo |
+| X2 | If an SSE `error` event arrives, then the hook shall set `streaming=false` and clear `streamingParts` without corrupting `messages` | todo |
+| X3 | If the `done` event arrives but `fullText` is empty and `parts` is empty, then the hook shall not add an assistant message | todo |
 
 ---
 
-### C7. FileTree + MarkdownEditor
+## Future
 
-#### Event-driven
-- E1 `[current]` When a file is clicked, FileTree shall call `onSelect`
-- E2 `[current]` When edit mode is toggled, MarkdownEditor shall switch between preview and textarea
-- E3 `[current]` When user saves in edit mode, editor shall call `onSave`
-- E4 `[future]` When a code block has a language tag, the editor shall render syntax-highlighted code
-
-#### State-driven
-- S1 `[current]` While in preview mode, markdown shall render with GFM tables
+> 以下功能尚未实现。测试声明作为架构愿景的占位，在实现时同步补充细节。
 
 ---
 
-### C8. MilestoneBar
+### Context Assembler `[future]`
 
-- U1 `[current]` The bar shall parse `- [x]` as completed and `- [ ]` as pending
-- S1 `[future]` While collapsed, the bar shall show compact progress bar
-- S2 `[future]` While expanded, the bar shall show full pill list
+> `services/contextAssembler.ts` — 用户可见的上下文选择中间层，项目核心差异化
 
----
-
-### C9. Modals
-
-- E1 `[current]` When Profile modal opens, it shall fetch and display profile.md content
-- E2 `[current]` When System Prompt modal opens, it shall show default prompt as placeholder
-- E3 `[current]` When Escape or backdrop is clicked, the modal shall close
-- S1 `[current]` While LLM is configured, LLM modal shall show green status dot
-
----
-
-### C10. Context Assembler UI `[future]`
-
-#### Ubiquitous
-- U1 `[future]` The context panel shall display all sources grouped by type (profile, prompt, files)
-
-#### Event-driven
-- E1 `[future]` When a context block is toggled, selection shall persist to session config
-- E2 `[future]` When "预览上下文" is clicked, the assembled context shall be fetched and displayed
-
-#### State-driven
-- S1 `[future]` While no explicit selection exists, the assembler shall use defaults
-- S2 `[future]` While preview is open, selection changes shall live-update the preview
+| # | EARS |
+|---|------|
+| U1 | The assembler shall always include the resolved system prompt (global + session) regardless of user selection |
+| U2 | The assembler output shall be deterministic: same config + same files = same result |
+| E1 | When a context config selects specific profile blocks, the assembler shall include only those blocks |
+| E2 | When a context config selects file segments, the assembler shall read and include those line ranges |
+| E3 | When `GET /api/session/:id/context-preview` is called, the route shall return the full assembled context |
+| E4 | When no context config exists, the assembler shall use sensible defaults |
+| X1 | If a referenced file in the config no longer exists, then the assembler shall skip it |
 
 ---
 
-## Test Infrastructure
+### Session 级教学指令 `[future]`
 
-### Server (已有)
+> `data/{sessionId}/session-prompt.md` — 追加到全局 prompt，不替换
+
+| # | EARS |
+|---|------|
+| E1 | When `session-prompt.md` exists in the session directory, `resolveSystemPrompt(dataDir, sessionId)` shall append its content to the global prompt |
+| X1 | If `session-prompt.md` is corrupted or unreadable, then the function shall use only the global prompt |
+
+---
+
+### 标题摘要 `[future]`
+
+> 首次发消息时并行触发轻量 LLM 调用生成短标题
+
+| # | EARS |
+|---|------|
+| E1 | When the first user message is sent, the server shall trigger a parallel LLM call to generate a 3-5 character title |
+| E2 | When the title generation completes, the server shall update `Session.concept` via `store.updateSession()` |
+| X1 | If the title LLM call fails, then `Session.concept` shall remain unchanged |
+
+---
+
+## 测试基础设施
+
+### Server（已就绪）
+
+| 工具 | 用途 |
+|------|------|
+| vitest | 测试运行器 |
+| supertest | HTTP 集成测试 |
+| `mkdtemp` 临时目录 | 文件系统 fixture 隔离 |
+
+### Client（需搭建）
+
+| 工具 | 用途 |
+|------|------|
+| vitest + jsdom | 复用 monorepo vitest 配置，加 jsdom 环境 |
+| `vi.fn()` / `vi.mock()` | Mock `api/client.ts` 模块，控制 SSE 事件序列 |
+
+> **注意**：不需要 `@testing-library/react` 或 `msw`。
+> - `useSession` 可通过 `renderHook`（从 React 18+ 的 `react-dom/test-utils` 或轻量 wrapper）测试
+> - `streamChat` 是纯函数，mock `fetch` 即可
+> - 我们不测 React 组件渲染
+
+---
+
+## 统计与优先级
+
+### 覆盖现状
+
+| 域 | 已有 | 待补 | 合计 |
+|----|------|------|------|
+| 1. 沙箱文件系统 | 22 | — | 22 |
+| 2. 引用解析 | 8 | — | 8 |
+| 3. 里程碑解析 | 8 | — | 8 |
+| 4. 工具执行层 | 7 | — | 7 |
+| 5. 系统提示词 | 3 | — | 3 |
+| 6. 数据存储 | — | 9 | 9 |
+| 7. Session 生命周期 | — | 5 | 5 |
+| **8. SSE 聊天流 ★** | **—** | **20** | **20** |
+| 9. 设置与文件路由 | 8 | 10 | 18 |
+| 10. SSE 流解析 | — | 6 | 6 |
+| **11. 会话状态机 ★** | **—** | **16** | **16** |
+| **合计** | **56** | **66** | **122** |
+
+### 实施优先级
 
 ```
-vitest                — 测试运行器
-supertest             — HTTP 集成测试
-临时目录 (mkdtemp)     — 隔离的文件系统 fixtures
+P0 — 系统脊柱（最高价值，零覆盖）
+  ★ 8. SSE 聊天流     (20 tests)  ← 整个系统的核心数据通道
+  ★ 11. 会话状态机     (16 tests)  ← 客户端中枢
+
+P1 — 数据层
+  6. 数据存储          (9 tests)   ← 持久化契约
+  7. Session 生命周期   (5 tests)   ← API 入口
+
+P2 — 补全
+  10. SSE 流解析        (6 tests)   ← 客户端唯一有复杂逻辑的 API 函数
+  9. 设置与文件路由     (10 tests)  ← Profile + File CRUD 补全
+
+P3 — 随功能实现
+  Context Assembler / Session 指令 / 标题摘要
 ```
-
-### Client (待建)
-
-```
-vitest + jsdom              — 复用 monorepo vitest，加 jsdom 环境
-@testing-library/react      — 组件渲染 + 查询
-@testing-library/user-event — 真实用户交互模拟
-msw (Mock Service Worker)   — API mock（拦截 fetch，不 mock 实现）
-```
-
----
-
-## Test Priority
-
-```
-Phase 1 — 核心逻辑（高价值，低依赖）
-  Server:
-    ✦ S6  Session CRUD routes (4 tests)
-    ✦ S7  Chat SSE route (8 tests)      ← 核心端点，零覆盖
-  Client:
-    ✦ C1  useSession hook (12 tests)     ← 状态机，最高价值
-    ✦ C2  API client (6 tests)
-
-Phase 2 — 交互覆盖
-  Client:
-    ✦ C3  App.tsx router (5 tests)
-    ✦ C4  Landing Page (6 tests)
-    ✦ C5  ChatPanel (9 tests)            ← 最复杂的交互组件
-    ✦ C6-C9  其余组件 (15 tests)
-  Server:
-    ✦ S5  补充 Profile routes (2 tests)
-
-Phase 3 — 架构演进（随功能实现同步）
-  Server:
-    ✦ S9  Context Assembler (8 tests)    ← 核心差异化
-    ✦ S10 Title Summary (3 tests)
-    ✦ S8  Session-level prompt (2 tests)
-  Client:
-    ✦ C10 Context Assembler UI (5 tests)
-    ✦ C5  Auto-scroll (E4-E5, S3)
-    ✦ C7  Syntax highlighting (E4)
-```
-
-### Coverage Target
-
-| Layer | Current | Phase 1 | Phase 2 | Phase 3 |
-|-------|---------|---------|---------|---------|
-| Server | 56 tests | +12 | +2 | +13 |
-| Client | 0 tests | +18 | +35 | +8 |
-| **Total** | **56** | **86** | **123** | **144** |

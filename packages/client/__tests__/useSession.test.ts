@@ -383,8 +383,8 @@ describe('useSession', () => {
     await flushEvents();
 
     expect(result.current.streaming).toBe(false);
-    expect(result.current.messages).toHaveLength(1);
-    expect(result.current.messages[0].role).toBe('user');
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.failedMessage).toBeTruthy();
   });
 
   it('X3: done with empty text and no parts skips assistant message', async () => {

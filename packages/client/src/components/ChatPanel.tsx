@@ -322,7 +322,14 @@ export default function ChatPanel({
           <div className="flex justify-start">
             <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
               <PartsRenderer parts={streamingParts} onRefClick={onReferenceClick} />
-              <span className="text-zinc-400 animate-pulse">...</span>
+              <div className="flex items-center gap-1.5 mt-1.5 text-zinc-400 animate-pulse">
+                <div className="flex gap-0.5">
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:300ms]" />
+                </div>
+                <span className="text-xs">处理中</span>
+              </div>
             </div>
           </div>
         )}

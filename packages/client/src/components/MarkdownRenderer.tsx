@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import Prism from 'react-syntax-highlighter/dist/esm/prism';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Prism } from 'react-syntax-highlighter';
+import oneDark from 'react-syntax-highlighter/dist/esm/styles/prism/one-dark';
 import type { Components } from 'react-markdown';
 
 const components: Components = {

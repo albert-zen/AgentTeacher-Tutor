@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { join } from 'path';
 import { readdirSync, existsSync, unlinkSync } from 'fs';
 import { FileService } from '../services/fileService.js';
+import { parseProfileBlocks } from '../services/profileParser.js';
 import type { Store } from '../db/index.js';
 import {
   isLLMConfigured,
@@ -18,6 +19,18 @@ export function createFilesRouter(store: Store, dataDir: string) {
     if (!session) return null;
     return new FileService(join(dataDir, sessionId));
   }
+
+  // Profile blocks
+  router.get('/profile/blocks', (_req, res) => {
+    const profilePath = join(dataDir, 'profile.md');
+    if (!existsSync(profilePath)) {
+      res.json([]);
+      return;
+    }
+    const svc = new FileService(dataDir);
+    const { content } = svc.readFile({ path: 'profile.md' });
+    res.json(parseProfileBlocks(content));
+  });
 
   // List files in session
   router.get('/:sessionId/files', (req, res) => {

@@ -4,6 +4,7 @@ import MarkdownEditor from './components/MarkdownEditor';
 import ChatPanel from './components/ChatPanel';
 import MilestoneBar from './components/MilestoneBar';
 import SelectionPopup from './components/SelectionPopup';
+import ResizeHandle from './components/ResizeHandle';
 import LandingPage from './components/landing/LandingPage';
 import { useSession } from './hooks/useSession';
 import { useTextSelection } from './hooks/useTextSelection';
@@ -34,6 +35,17 @@ export default function App() {
   // Attachments (file refs + quotes) for the chat input
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const copySourceRef = useRef<CopySource | null>(null);
+
+  const [fileTreeWidth, setFileTreeWidth] = useState(208);
+  const [chatWidth, setChatWidth] = useState(384);
+
+  const handleFileTreeResize = useCallback((delta: number) => {
+    setFileTreeWidth((w) => Math.min(400, Math.max(120, w + delta)));
+  }, []);
+
+  const handleChatResize = useCallback((delta: number) => {
+    setChatWidth((w) => Math.min(600, Math.max(280, w - delta)));
+  }, []);
 
   const addAttachment = useCallback((att: Attachment) => {
     setAttachments((prev) => [...prev, att]);
@@ -187,7 +199,7 @@ export default function App() {
       {/* Main workspace */}
       <div className="flex-1 flex min-h-0">
         {/* File Tree */}
-        <div className="w-52 flex-shrink-0 border-r border-zinc-800">
+        <div className="flex-shrink-0 border-r border-zinc-800" style={{ width: fileTreeWidth }}>
           <FileTree
             files={files}
             activeFile={activeFile}
@@ -196,6 +208,8 @@ export default function App() {
             onDelete={handleDeleteFile}
           />
         </div>
+
+        <ResizeHandle onResize={handleFileTreeResize} />
 
         {/* Editor Area */}
         <div className="flex-1 flex flex-col min-w-0">
@@ -217,8 +231,10 @@ export default function App() {
           )}
         </div>
 
+        <ResizeHandle onResize={handleChatResize} />
+
         {/* Chat Panel */}
-        <div className="w-96 flex-shrink-0 border-l border-zinc-800">
+        <div className="flex-shrink-0 border-l border-zinc-800" style={{ width: chatWidth }}>
           <ChatPanel
             messages={messages}
             streaming={streaming}

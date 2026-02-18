@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface Props {
   fileName: string;
@@ -71,7 +70,7 @@ export default function MarkdownEditor({ fileName, content, readOnly, onSave, on
           />
         ) : (
           <div className="p-4 prose prose-invert prose-sm max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <MarkdownRenderer>{content}</MarkdownRenderer>
           </div>
         )}
       </div>

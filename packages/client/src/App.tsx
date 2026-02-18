@@ -6,6 +6,7 @@ import MilestoneBar from './components/MilestoneBar';
 import SelectionPopup from './components/SelectionPopup';
 import ResizeHandle from './components/ResizeHandle';
 import LandingPage from './components/landing/LandingPage';
+import SessionPromptModal from './components/SessionPromptModal';
 import { useSession } from './hooks/useSession';
 import { useTextSelection } from './hooks/useTextSelection';
 import * as api from './api/client';
@@ -37,6 +38,7 @@ export default function App() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const copySourceRef = useRef<CopySource | null>(null);
 
+  const [editingSessionPrompt, setEditingSessionPrompt] = useState(false);
   const [fileTreeWidth, setFileTreeWidth] = useState(208);
   const [chatWidth, setChatWidth] = useState(384);
 
@@ -194,6 +196,12 @@ export default function App() {
           </button>
           <span className="text-zinc-600">|</span>
           <span className="text-sm text-zinc-300 font-medium">{session.concept}</span>
+          <button
+            onClick={() => setEditingSessionPrompt(true)}
+            className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-0.5 border border-zinc-700 rounded hover:border-zinc-500 transition-colors"
+          >
+            教学指令
+          </button>
         </div>
       </div>
 
@@ -252,6 +260,14 @@ export default function App() {
           />
         </div>
       </div>
+
+      {editingSessionPrompt && session && (
+        <SessionPromptModal
+          sessionId={session.id}
+          open={editingSessionPrompt}
+          onClose={() => setEditingSessionPrompt(false)}
+        />
+      )}
 
       <SelectionPopup
         onAsk={(selectedText) => {

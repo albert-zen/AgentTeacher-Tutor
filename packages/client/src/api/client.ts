@@ -105,6 +105,17 @@ export async function updateProfile(content: string): Promise<void> {
   });
 }
 
+export interface ProfileBlock {
+  id: string;
+  name: string;
+  content: string;
+}
+
+export async function getProfileBlocks(): Promise<ProfileBlock[]> {
+  const res = await fetch(`${BASE}/profile/blocks`);
+  return res.json();
+}
+
 export async function getSystemPrompt(): Promise<FileContent & { defaultContent: string }> {
   const res = await fetch(`${BASE}/system-prompt`);
   return res.json();

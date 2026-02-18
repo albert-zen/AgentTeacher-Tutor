@@ -76,4 +76,15 @@ describe('streamChat SSE parsing', () => {
     const ctrl = streamChat('s1', 'hello');
     expect(() => ctrl.abort()).not.toThrow();
   });
+
+  // X3: non-ok response emits error event
+  it('emits error event when response is not ok', async () => {
+    const events: SSEEvent[] = [];
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('Internal Server Error', { status: 500, statusText: 'Internal Server Error' }),
+    );
+    streamChat('s1', 'hello', undefined, (e) => events.push(e));
+    await vi.waitFor(() => expect(events).toHaveLength(1));
+    expect(events[0]).toEqual({ type: 'error', error: 'API error 500: Internal Server Error' });
+  });
 });

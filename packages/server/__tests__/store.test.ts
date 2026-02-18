@@ -125,4 +125,21 @@ describe('Store', () => {
     store.createSession(makeSession());
     expect(store.getSession('no-such-id')).toBeUndefined();
   });
+
+  // E: updateSession
+  it('updateSession updates session fields and persists', () => {
+    const store = new Store(tempDir);
+    store.createSession(makeSession({ id: 'upd-1', concept: 'old title' }));
+    const updated = store.updateSession('upd-1', { concept: 'new title' });
+    expect(updated?.concept).toBe('new title');
+    // Verify persistence
+    const reloaded = store.getSession('upd-1');
+    expect(reloaded?.concept).toBe('new title');
+  });
+
+  // X: updateSession returns undefined for non-existent id
+  it('updateSession returns undefined for non-existent id', () => {
+    const store = new Store(tempDir);
+    expect(store.updateSession('nope', { concept: 'x' })).toBeUndefined();
+  });
 });

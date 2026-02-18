@@ -66,16 +66,8 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
             </button>
           </div>
 
-          {/* Continue learning */}
-          {latestSession && (
-            <div className="mb-6">
-              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2.5">继续学习</p>
-              <ContinueCard session={latestSession} onResume={onLoadSession} />
-            </div>
-          )}
-
           {/* Settings */}
-          <div>
+          <div className="mb-6">
             <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2.5">设置</p>
             <SettingsCards
               onOpenProfile={() => setModal('profile')}
@@ -84,6 +76,14 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
               onOpenLLM={() => setModal('llm')}
             />
           </div>
+
+          {/* Continue learning */}
+          {latestSession && (
+            <div>
+              <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2.5">继续学习</p>
+              <ContinueCard session={latestSession} onResume={onLoadSession} />
+            </div>
+          )}
         </div>
       </div>
 

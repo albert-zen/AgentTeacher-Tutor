@@ -97,16 +97,22 @@ export default function App() {
     copySourceRef.current = { file: activeFile, startLine, endLine, text: selectedText };
   }, [activeFile, fileContent]);
 
-  // Load file content when active file changes
+  // Load file content when active file or file list changes
   useEffect(() => {
-    if (!session || !activeFile) return;
+    if (!session || !activeFile || !files.includes(activeFile)) return;
+    let stale = false;
     api
       .readFile(session.id, activeFile)
       .then((res) => {
-        setFileContent(res.content);
+        if (!stale) setFileContent(res.content);
       })
-      .catch(() => setFileContent(''));
-  }, [session, activeFile]);
+      .catch(() => {
+        if (!stale) setFileContent('');
+      });
+    return () => {
+      stale = true;
+    };
+  }, [session, activeFile, files]);
 
   // Auto-select guidance.md when files change
   useEffect(() => {
@@ -119,24 +125,17 @@ export default function App() {
   // Load milestones whenever files refresh
   useEffect(() => {
     if (!session || !files.includes('milestones.md')) return;
+    let stale = false;
     api
       .readFile(session.id, 'milestones.md')
       .then((res) => {
-        setMilestonesContent(res.content);
+        if (!stale) setMilestonesContent(res.content);
       })
       .catch(() => {});
+    return () => {
+      stale = true;
+    };
   }, [session, files]);
-
-  // Reload active file content when files list changes (Teacher may have updated it)
-  useEffect(() => {
-    if (!session || !activeFile || !files.includes(activeFile)) return;
-    api
-      .readFile(session.id, activeFile)
-      .then((res) => {
-        setFileContent(res.content);
-      })
-      .catch(() => {});
-  }, [files]);
 
   const handleCreateFile = useCallback(
     async (name: string) => {

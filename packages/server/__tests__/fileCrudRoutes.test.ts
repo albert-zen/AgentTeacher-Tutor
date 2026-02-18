@@ -149,4 +149,11 @@ describe('File CRUD routes', () => {
     const res = await request(app).delete(`/api/${id}/file`).query({ path: 'nosuchfile.md' });
     expect(res.status).toBe(404);
   });
+
+  it('DELETE with path traversal returns 400', async () => {
+    const id = await createTestSession();
+    const res = await request(app).delete(`/api/${id}/file`).query({ path: '../../etc/passwd' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Path traversal not allowed');
+  });
 });

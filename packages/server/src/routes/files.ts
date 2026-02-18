@@ -98,9 +98,10 @@ export function createFilesRouter(store: Store, dataDir: string) {
     try {
       svc.deleteFile(filePath);
       res.json({ success: true });
-    } catch (err: any) {
-      const status = err.message === 'File not found' ? 404 : 400;
-      res.status(status).json({ error: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg === 'File not found' ? 404 : 400;
+      res.status(status).json({ error: msg });
     }
   });
 

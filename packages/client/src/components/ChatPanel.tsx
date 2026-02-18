@@ -23,6 +23,8 @@ interface Props {
   onSend: (message: string, references: FileRef[]) => void;
   onStop?: () => void;
   onReferenceClick?: (file: string, startLine?: number, endLine?: number) => void;
+  failedMessage?: { message: string; references: FileRef[] } | null;
+  onRetry?: () => void;
 }
 
 const REF_REGEX = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g;
@@ -197,6 +199,8 @@ export default function ChatPanel({
   onSend,
   onStop,
   onReferenceClick,
+  failedMessage,
+  onRetry,
 }: Props) {
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -331,6 +335,15 @@ export default function ChatPanel({
         )}
         <div ref={bottomRef} />
       </div>
+
+      {failedMessage && (
+        <div className="mx-4 mb-2 px-3 py-2 bg-red-950/50 border border-red-900/50 rounded-lg flex items-center justify-between">
+          <span className="text-xs text-red-400">消息发送失败</span>
+          <button onClick={onRetry} className="text-xs text-red-400 hover:text-red-300 underline">
+            重试
+          </button>
+        </div>
+      )}
 
       {/* Input area: chips + textarea in one visual container */}
       <div className="px-4 py-3 border-t border-zinc-800">

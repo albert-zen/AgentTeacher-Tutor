@@ -8,6 +8,7 @@ export function useSession() {
   const [files, setFiles] = useState<string[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
+  const [writingFile, setWritingFile] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Use ref to always have latest session in callbacks
   const sessionRef = useRef<api.Session | null>(null);
@@ -55,10 +56,14 @@ export function useSession() {
           }
         } else if (event.type === 'tool-call') {
           currentTextPart = null;
+          if (event.toolName === 'write_file') {
+            setWritingFile(((event.args as Record<string, unknown>)?.path as string) ?? null);
+          }
           parts.push({ type: 'tool-call', toolName: event.toolName ?? 'unknown', args: event.args });
           setStreamingParts([...parts]);
         } else if (event.type === 'tool-result') {
           currentTextPart = null;
+          setWritingFile(null);
           parts.push({ type: 'tool-result', toolName: event.toolName ?? 'unknown', result: event.result });
           setStreamingParts([...parts]);
           refreshFilesBySessionId(sessionId);
@@ -76,10 +81,12 @@ export function useSession() {
           }
           setStreamingParts([]);
           setStreaming(false);
+          setWritingFile(null);
           refreshFilesBySessionId(sessionId);
         } else if (event.type === 'error') {
           setStreaming(false);
           setStreamingParts([]);
+          setWritingFile(null);
         }
       });
     },
@@ -128,6 +135,7 @@ export function useSession() {
     setFiles([]);
     setStreaming(false);
     setStreamingParts([]);
+    setWritingFile(null);
   }, []);
 
   const stopStreaming = useCallback(() => {
@@ -137,6 +145,7 @@ export function useSession() {
     }
     setStreaming(false);
     setStreamingParts([]);
+    setWritingFile(null);
   }, []);
 
   return {
@@ -151,5 +160,6 @@ export function useSession() {
     stopStreaming,
     send,
     refreshFiles,
+    writingFile,
   };
 }

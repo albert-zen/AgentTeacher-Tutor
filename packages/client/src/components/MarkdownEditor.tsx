@@ -5,12 +5,13 @@ interface Props {
   fileName: string;
   content: string;
   readOnly?: boolean;
+  isWriting?: boolean;
   onSave?: (content: string) => void;
   onMouseUp?: () => void;
   onCopy?: () => void;
 }
 
-export default function MarkdownEditor({ fileName, content, readOnly, onSave, onMouseUp, onCopy }: Props) {
+export default function MarkdownEditor({ fileName, content, readOnly, isWriting, onSave, onMouseUp, onCopy }: Props) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
 
@@ -61,6 +62,12 @@ export default function MarkdownEditor({ fileName, content, readOnly, onSave, on
           )}
         </div>
       </div>
+      {isWriting && (
+        <div className="px-4 py-1.5 bg-blue-950/50 border-b border-blue-900/50 flex items-center gap-2">
+          <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-blue-400">Writing...</span>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto" onMouseUp={onMouseUp} onCopy={onCopy}>
         {editing ? (
           <textarea

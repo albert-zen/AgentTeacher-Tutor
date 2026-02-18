@@ -23,6 +23,7 @@ export default function App() {
     stopStreaming,
     send,
     refreshFiles,
+    writingFile,
   } = useSession();
   const { handleSelection } = useTextSelection();
 
@@ -205,6 +206,7 @@ export default function App() {
               <MarkdownEditor
                 fileName={activeFile}
                 content={fileContent}
+                isWriting={writingFile === activeFile}
                 onSave={handleSaveFile}
                 onMouseUp={() => handleSelection(activeFile, fileContent)}
                 onCopy={handleEditorCopy}

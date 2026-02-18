@@ -1,5 +1,12 @@
 const BASE = '/api';
 
+async function assertOk(res: Response): Promise<void> {
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${body}`);
+  }
+}
+
 export interface Session {
   id: string;
   concept: string;
@@ -57,52 +64,61 @@ export async function createSession(concept: string): Promise<Session> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ concept }),
   });
+  await assertOk(res);
   return res.json();
 }
 
 export async function getSessions(): Promise<Session[]> {
   const res = await fetch(`${BASE}/session`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function getSession(id: string): Promise<{ session: Session; messages: ChatMessage[] }> {
   const res = await fetch(`${BASE}/session/${id}`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function getFiles(sessionId: string): Promise<string[]> {
   const res = await fetch(`${BASE}/${sessionId}/files`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function readFile(sessionId: string, filePath: string): Promise<FileContent> {
   const res = await fetch(`${BASE}/${sessionId}/file?path=${encodeURIComponent(filePath)}`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function writeFile(sessionId: string, filePath: string, content: string): Promise<void> {
-  await fetch(`${BASE}/${sessionId}/file`, {
+  const res = await fetch(`${BASE}/${sessionId}/file`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: filePath, content }),
   });
+  await assertOk(res);
 }
 
 export async function deleteFile(sessionId: string, filePath: string): Promise<void> {
-  await fetch(`${BASE}/${sessionId}/file?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/${sessionId}/file?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
+  await assertOk(res);
 }
 
 export async function getProfile(): Promise<FileContent> {
   const res = await fetch(`${BASE}/profile`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function updateProfile(content: string): Promise<void> {
-  await fetch(`${BASE}/profile`, {
+  const res = await fetch(`${BASE}/profile`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
+  await assertOk(res);
 }
 
 export interface ProfileBlock {
@@ -113,33 +129,38 @@ export interface ProfileBlock {
 
 export async function getProfileBlocks(): Promise<ProfileBlock[]> {
   const res = await fetch(`${BASE}/profile/blocks`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function getSessionPromptDraft(): Promise<FileContent> {
   const res = await fetch(`${BASE}/session-prompt-draft`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function updateSessionPromptDraft(content: string): Promise<void> {
-  await fetch(`${BASE}/session-prompt-draft`, {
+  const res = await fetch(`${BASE}/session-prompt-draft`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
+  await assertOk(res);
 }
 
 export async function getSystemPrompt(): Promise<FileContent & { defaultContent: string }> {
   const res = await fetch(`${BASE}/system-prompt`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function updateSystemPrompt(content: string): Promise<void> {
-  await fetch(`${BASE}/system-prompt`, {
+  const res = await fetch(`${BASE}/system-prompt`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
+  await assertOk(res);
 }
 
 export interface LLMStatus {
@@ -151,6 +172,7 @@ export interface LLMStatus {
 
 export async function getLLMStatus(): Promise<LLMStatus> {
   const res = await fetch(`${BASE}/llm-status`);
+  await assertOk(res);
   return res.json();
 }
 
@@ -165,6 +187,7 @@ export async function updateLLMConfig(config: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+  await assertOk(res);
   return res.json();
 }
 
@@ -175,6 +198,7 @@ export interface MilestoneProgress {
 
 export async function getSessionMilestones(sessionId: string): Promise<MilestoneProgress> {
   const res = await fetch(`${BASE}/session/${sessionId}/milestones`);
+  await assertOk(res);
   return res.json();
 }
 
@@ -186,15 +210,17 @@ export interface ContextPreview {
 
 export async function getContextPreview(sessionId: string): Promise<ContextPreview> {
   const res = await fetch(`${BASE}/session/${sessionId}/context-preview`);
+  await assertOk(res);
   return res.json();
 }
 
 export async function updateContextConfig(sessionId: string, config: { profileBlockIds?: string[] }): Promise<void> {
-  await fetch(`${BASE}/session/${sessionId}/context-config`, {
+  const res = await fetch(`${BASE}/session/${sessionId}/context-config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+  await assertOk(res);
 }
 
 export interface SSEEvent {
@@ -221,6 +247,11 @@ export function streamChat(
     signal: controller.signal,
   })
     .then(async (res) => {
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        onEvent?.({ type: 'error', error: `API error ${res.status}: ${body}` });
+        return;
+      }
       const reader = res.body?.getReader();
       if (!reader) return;
       const decoder = new TextDecoder();

@@ -83,6 +83,13 @@ export function useSession() {
           setStreaming(false);
           setWritingFile(null);
           refreshFilesBySessionId(sessionId);
+          api
+            .getSession(sessionId)
+            .then((data) => {
+              setSession(data.session);
+              sessionRef.current = data.session;
+            })
+            .catch(() => {});
         } else if (event.type === 'error') {
           setStreaming(false);
           setStreamingParts([]);

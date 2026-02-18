@@ -40,6 +40,15 @@ export class Store {
     mkdirSync(sessionDir, { recursive: true });
   }
 
+  updateSession(id: string, patch: Partial<Omit<Session, 'id'>>): Session | undefined {
+    const sessions = this.getSessions();
+    const idx = sessions.findIndex((s) => s.id === id);
+    if (idx === -1) return undefined;
+    sessions[idx] = { ...sessions[idx], ...patch };
+    writeFileSync(this.sessionsFile(), JSON.stringify(sessions, null, 2));
+    return sessions[idx];
+  }
+
   // === Messages ===
 
   getMessages(sessionId: string): ChatMessage[] {

@@ -72,7 +72,9 @@ export default function SessionSidebar({ sessions, onSelect }: Props) {
             onClick={() => onSelect(s.id)}
             className="w-full text-left px-3 py-2 hover:bg-zinc-800/70 transition-colors group"
           >
-            <div className="text-sm text-zinc-300 group-hover:text-zinc-100 truncate">{s.concept}</div>
+            <div className="text-sm text-zinc-300 group-hover:text-zinc-100 truncate" title={s.concept}>
+              {s.concept}
+            </div>
             <div className="text-xs text-zinc-600 mt-0.5">
               {new Date(s.createdAt).toLocaleDateString('zh-CN', {
                 month: 'short',

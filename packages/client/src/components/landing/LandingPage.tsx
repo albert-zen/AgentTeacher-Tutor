@@ -42,13 +42,19 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
 
           {/* Concept input */}
           <div className="flex gap-2 mb-8">
-            <input
+            <textarea
               autoFocus
+              rows={2}
               value={conceptInput}
               onChange={(e) => setConceptInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleStart()}
-              placeholder="输入你想学习的概念..."
-              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-3.5 text-white placeholder-zinc-600 outline-none focus:border-zinc-600 focus:shadow-[0_0_0_3px_rgba(63,63,70,0.3)] transition-all"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleStart();
+                }
+              }}
+              placeholder="描述你想学的、想问的..."
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-3.5 text-white placeholder-zinc-600 outline-none focus:border-zinc-600 focus:shadow-[0_0_0_3px_rgba(63,63,70,0.3)] transition-all resize-none"
             />
             <button
               onClick={handleStart}

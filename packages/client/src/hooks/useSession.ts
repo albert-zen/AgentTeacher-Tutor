@@ -93,7 +93,7 @@ export function useSession() {
       sessionRef.current = sess;
       setMessages([]);
       setFiles([]);
-      sendMessage(sess.id, `我想学习：${concept}`, []);
+      sendMessage(sess.id, concept, []);
     },
     [sendMessage],
   );

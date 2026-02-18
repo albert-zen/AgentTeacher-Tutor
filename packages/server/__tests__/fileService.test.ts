@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { FileService } from '../src/services/fileService.js';
@@ -173,5 +173,23 @@ describe('trailing newline handling', () => {
     expect(() => {
       svc.writeFile({ path: 'test.md', content: 'X', startLine: 1, endLine: 1 });
     }).toThrow();
+  });
+});
+
+describe('deleteFile', () => {
+  it('正常删除 — 文件存在时删除成功', () => {
+    svc.writeFile({ path: 'to-delete.md', content: 'temp' });
+    const filePath = join(tempDir, 'to-delete.md');
+    expect(existsSync(filePath)).toBe(true);
+    svc.deleteFile('to-delete.md');
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it('路径穿越 — ../../etc/passwd 应抛出 Path traversal not allowed', () => {
+    expect(() => svc.deleteFile('../../etc/passwd')).toThrow('Path traversal not allowed');
+  });
+
+  it('文件不存在 — 删除不存在的文件应抛出错误', () => {
+    expect(() => svc.deleteFile('nonexistent.md')).toThrow('File not found');
   });
 });

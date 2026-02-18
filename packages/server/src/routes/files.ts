@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { join } from 'path';
-import { readdirSync, existsSync, unlinkSync } from 'fs';
+import { readdirSync, existsSync } from 'fs';
 import { FileService } from '../services/fileService.js';
 import { parseProfileBlocks } from '../services/profileParser.js';
 import type { Store } from '../db/index.js';
@@ -90,17 +90,17 @@ export function createFilesRouter(store: Store, dataDir: string) {
       res.status(400).json({ error: 'path query param required' });
       return;
     }
-    const sessionDir = join(dataDir, req.params.sessionId);
-    const fullPath = join(sessionDir, filePath);
-    if (!existsSync(fullPath)) {
-      res.status(404).json({ error: 'File not found' });
+    const svc = getFileService(req.params.sessionId);
+    if (!svc) {
+      res.status(404).json({ error: 'Session not found' });
       return;
     }
     try {
-      unlinkSync(fullPath);
+      svc.deleteFile(filePath);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      const status = err.message === 'File not found' ? 404 : 400;
+      res.status(status).json({ error: err.message });
     }
   });
 

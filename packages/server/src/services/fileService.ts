@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
 import { resolve, relative, isAbsolute } from 'path';
 import type { ReadFileParams, WriteFileParams, ReadFileResult } from '../types.js';
 
@@ -61,6 +61,14 @@ export class FileService {
       content: selected.join('\n'),
       totalLines,
     };
+  }
+
+  deleteFile(path: string): void {
+    const absPath = this.resolvePath(path);
+    if (!existsSync(absPath)) {
+      throw new Error('File not found');
+    }
+    unlinkSync(absPath);
   }
 
   writeFile(params: WriteFileParams): void {

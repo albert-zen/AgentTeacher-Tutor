@@ -26,6 +26,8 @@ export default function App() {
     send,
     refreshFiles,
     writingFile,
+    failedMessage,
+    retrySend,
   } = useSession();
   const { handleSelection } = useTextSelection();
 
@@ -257,6 +259,8 @@ export default function App() {
             onSend={send}
             onStop={stopStreaming}
             onReferenceClick={handleReferenceClick}
+            failedMessage={failedMessage}
+            onRetry={retrySend}
           />
         </div>
       </div>

@@ -187,30 +187,35 @@ export function streamChat(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, references }),
     signal: controller.signal,
-  }).then(async (res) => {
-    const reader = res.body?.getReader();
-    if (!reader) return;
-    const decoder = new TextDecoder();
-    let buffer = '';
+  })
+    .then(async (res) => {
+      const reader = res.body?.getReader();
+      if (!reader) return;
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const event: SSEEvent = JSON.parse(line.slice(6));
-            onEvent?.(event);
-          } catch {
-            /* skip */
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event: SSEEvent = JSON.parse(line.slice(6));
+              onEvent?.(event);
+            } catch {
+              /* skip */
+            }
           }
         }
       }
-    }
-  });
+    })
+    .catch((err: unknown) => {
+      if ((err as DOMException)?.name === 'AbortError') return;
+      onEvent?.({ type: 'error', error: String(err) });
+    });
 
   return controller;
 }

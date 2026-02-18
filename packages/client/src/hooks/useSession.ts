@@ -9,8 +9,11 @@ export function useSession() {
   const [streaming, setStreaming] = useState(false);
   const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
   const [writingFile, setWritingFile] = useState<string | null>(null);
+  const [failedMessage, setFailedMessage] = useState<{
+    message: string;
+    references: api.FileRef[];
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Use ref to always have latest session in callbacks
   const sessionRef = useRef<api.Session | null>(null);
 
   const refreshFilesBySessionId = useCallback(async (sessionId: string) => {
@@ -27,6 +30,7 @@ export function useSession() {
     (sessionId: string, message: string, references: api.FileRef[]) => {
       setStreaming(true);
       setStreamingParts([]);
+      setFailedMessage(null);
       const userMsg: api.ChatMessage = {
         id: Date.now().toString(),
         sessionId,
@@ -82,6 +86,7 @@ export function useSession() {
           setStreamingParts([]);
           setStreaming(false);
           setWritingFile(null);
+          setFailedMessage(null);
           refreshFilesBySessionId(sessionId);
           api
             .getSession(sessionId)
@@ -94,6 +99,8 @@ export function useSession() {
           setStreaming(false);
           setStreamingParts([]);
           setWritingFile(null);
+          setFailedMessage({ message, references });
+          setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
         }
       });
     },
@@ -131,6 +138,13 @@ export function useSession() {
     [sendMessage],
   );
 
+  const retrySend = useCallback(() => {
+    if (!failedMessage || !sessionRef.current) return;
+    const { message, references } = failedMessage;
+    setFailedMessage(null);
+    sendMessage(sessionRef.current.id, message, references);
+  }, [failedMessage, sendMessage]);
+
   const clearSession = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
@@ -153,6 +167,7 @@ export function useSession() {
     setStreaming(false);
     setStreamingParts([]);
     setWritingFile(null);
+    setFailedMessage(null);
   }, []);
 
   return {
@@ -168,5 +183,7 @@ export function useSession() {
     send,
     refreshFiles,
     writingFile,
+    failedMessage,
+    retrySend,
   };
 }

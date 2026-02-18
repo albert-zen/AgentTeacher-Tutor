@@ -2,10 +2,11 @@ import { useCallback, useRef } from 'react';
 
 interface ResizeHandleProps {
   onResize: (deltaX: number) => void;
+  onResizeEnd?: () => void;
   direction?: 'horizontal' | 'vertical';
 }
 
-export default function ResizeHandle({ onResize, direction = 'horizontal' }: ResizeHandleProps) {
+export default function ResizeHandle({ onResize, onResizeEnd, direction = 'horizontal' }: ResizeHandleProps) {
   const lastPosRef = useRef(0);
 
   const handleMouseDown = useCallback(
@@ -31,12 +32,13 @@ export default function ResizeHandle({ onResize, direction = 'horizontal' }: Res
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
         overlay.remove();
+        onResizeEnd?.();
       };
 
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', onMouseUp);
     },
-    [direction, onResize],
+    [direction, onResize, onResizeEnd],
   );
 
   return (

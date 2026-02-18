@@ -44,12 +44,27 @@ export default function App() {
   const [fileTreeWidth, setFileTreeWidth] = useState(208);
   const [chatWidth, setChatWidth] = useState(384);
 
+  const fileTreeRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
+  const fileTreeWidthRef = useRef(208);
+  const chatWidthRef = useRef(384);
+
   const handleFileTreeResize = useCallback((delta: number) => {
-    setFileTreeWidth((w) => Math.min(400, Math.max(120, w + delta)));
+    const w = Math.min(400, Math.max(120, fileTreeWidthRef.current + delta));
+    fileTreeWidthRef.current = w;
+    if (fileTreeRef.current) fileTreeRef.current.style.width = `${w}px`;
+  }, []);
+  const handleFileTreeResizeEnd = useCallback(() => {
+    setFileTreeWidth(fileTreeWidthRef.current);
   }, []);
 
   const handleChatResize = useCallback((delta: number) => {
-    setChatWidth((w) => Math.min(600, Math.max(280, w - delta)));
+    const w = Math.min(600, Math.max(280, chatWidthRef.current - delta));
+    chatWidthRef.current = w;
+    if (chatRef.current) chatRef.current.style.width = `${w}px`;
+  }, []);
+  const handleChatResizeEnd = useCallback(() => {
+    setChatWidth(chatWidthRef.current);
   }, []);
 
   const addAttachment = useCallback((att: Attachment) => {
@@ -210,7 +225,7 @@ export default function App() {
       {/* Main workspace */}
       <div className="flex-1 flex min-h-0">
         {/* File Tree */}
-        <div className="flex-shrink-0 border-r border-zinc-800" style={{ width: fileTreeWidth }}>
+        <div ref={fileTreeRef} className="flex-shrink-0 border-r border-zinc-800" style={{ width: fileTreeWidth }}>
           <FileTree
             files={files}
             activeFile={activeFile}
@@ -220,7 +235,7 @@ export default function App() {
           />
         </div>
 
-        <ResizeHandle onResize={handleFileTreeResize} />
+        <ResizeHandle onResize={handleFileTreeResize} onResizeEnd={handleFileTreeResizeEnd} />
 
         {/* Editor Area */}
         <div className="flex-1 flex flex-col min-w-0">
@@ -243,10 +258,10 @@ export default function App() {
           )}
         </div>
 
-        <ResizeHandle onResize={handleChatResize} />
+        <ResizeHandle onResize={handleChatResize} onResizeEnd={handleChatResizeEnd} />
 
         {/* Chat Panel */}
-        <div className="flex-shrink-0 border-l border-zinc-800" style={{ width: chatWidth }}>
+        <div ref={chatRef} className="flex-shrink-0 border-l border-zinc-800" style={{ width: chatWidth }}>
           <ChatPanel
             messages={messages}
             streaming={streaming}

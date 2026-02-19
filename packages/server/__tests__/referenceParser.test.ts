@@ -33,4 +33,21 @@ describe('解析引用', () => {
     const refs = parseReferences('这段话没有引用任何文件');
     expect(refs).toHaveLength(0);
   });
+
+  it('解析块引用 [file.md#学习目标]', () => {
+    const refs = parseReferences('看看 [file.md#学习目标] 这部分');
+    expect(refs).toEqual([{ file: 'file.md', startLine: undefined, endLine: undefined, blockId: '学习目标' }]);
+  });
+
+  it('混合行引用和块引用', () => {
+    const refs = parseReferences('对比 [guidance.md:1:5] 和 [profile.md#基本信息] 的区别');
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toEqual({ file: 'guidance.md', startLine: 1, endLine: 5, blockId: undefined });
+    expect(refs[1]).toEqual({ file: 'profile.md', startLine: undefined, endLine: undefined, blockId: '基本信息' });
+  });
+
+  it('块引用不带 blockId 仍作为仅文件引用', () => {
+    const refs = parseReferences('请看 [notes.md]');
+    expect(refs).toEqual([{ file: 'notes.md', startLine: undefined, endLine: undefined, blockId: undefined }]);
+  });
 });

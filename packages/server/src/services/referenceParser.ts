@@ -2,9 +2,10 @@ export interface FileReference {
   file: string;
   startLine?: number;
   endLine?: number;
+  blockId?: string;
 }
 
-const REFERENCE_REGEX = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g;
+const REFERENCE_REGEX = /\[([^[\]\s:#]+\.\w+)(?::(\d+):(\d+)|#([^\]]+))?\]/g;
 
 export function parseReferences(text: string): FileReference[] {
   const refs: FileReference[] = [];
@@ -15,6 +16,7 @@ export function parseReferences(text: string): FileReference[] {
       file: match[1],
       startLine: match[2] !== undefined ? parseInt(match[2], 10) : undefined,
       endLine: match[3] !== undefined ? parseInt(match[3], 10) : undefined,
+      blockId: match[4] !== undefined ? match[4] : undefined,
     });
   }
   return refs;

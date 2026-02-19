@@ -34,7 +34,7 @@ export function getSourceLineFromNode(node: Node): { start: number; end: number 
 }
 
 export function useTextSelection() {
-  const handleSelection = useCallback((fileName: string, _content: string): TextSelection | null => {
+  const handleSelection = useCallback((fileName: string): TextSelection | null => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.toString().trim()) return null;
 

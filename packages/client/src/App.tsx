@@ -224,7 +224,7 @@ export default function App() {
                 content={fileContent}
                 isWriting={writingFile === activeFile}
                 onSave={handleSaveFile}
-                onMouseUp={() => handleSelection(activeFile, fileContent)}
+                onMouseUp={() => handleSelection(activeFile)}
                 onCopy={handleEditorCopy}
               />
             </div>
@@ -263,7 +263,7 @@ export default function App() {
 
       <SelectionPopup
         onAsk={(selectedText) => {
-          const fileRef = activeFile ? handleSelection(activeFile, fileContent) : null;
+          const fileRef = activeFile ? handleSelection(activeFile) : null;
           if (fileRef) {
             chatPanelRef.current?.insertReference({
               file: fileRef.fileName,

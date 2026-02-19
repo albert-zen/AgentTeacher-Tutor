@@ -181,7 +181,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         class: 'outline-none w-full min-h-[3rem] max-h-32 overflow-y-auto px-3 py-2 text-sm text-zinc-200',
       },
       handleKeyDown(_view, event) {
-        if (event.key === 'Enter' && !event.shiftKey) {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
           event.preventDefault();
           handleSubmitRef.current();
           return true;
@@ -267,17 +267,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
     }
   }, [messages, streamingParts]);
 
-  const hasChips = editor?.state.doc.nodeSize
-    ? (() => {
-        let found = false;
-        editor.state.doc.descendants((node) => {
-          if (node.type.name === 'referenceChip' || node.type.name === 'quoteChip') found = true;
-          return !found;
-        });
-        return found;
-      })()
-    : false;
-  const isEmpty = !editor || (!editor.state.doc.textContent.trim() && !hasChips);
+  const isEmpty = !editor || !serializeEditorContent(editor);
 
   return (
     <div className="h-full flex flex-col bg-zinc-950">

@@ -32,7 +32,9 @@ export function serializeEditorContent(editor: Editor): string {
           line += `[${file}:${startLine}:${endLine}]`;
         } else if (child.type.name === 'quoteChip') {
           const quoted = (child.attrs.text as string).replace(/\n/g, '\n> ');
-          line += `\n> ${quoted}\n`;
+          paragraphs.push(line);
+          paragraphs.push(`> ${quoted}`);
+          line = '';
         } else if (child.isText) {
           line += child.text ?? '';
         } else if (child.type.name === 'hardBreak') {

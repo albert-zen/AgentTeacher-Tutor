@@ -6,6 +6,7 @@ import express from 'express';
 import request from 'supertest';
 import { Store } from '../src/db/index.js';
 import { createSessionRouter } from '../src/routes/session.js';
+import { createChatRouter } from '../src/routes/chat.js';
 
 vi.mock('../src/services/llm.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/services/llm.js')>();
@@ -62,6 +63,7 @@ beforeEach(() => {
   app = express();
   app.use(express.json());
   app.use('/api/session', createSessionRouter(store, tempDir));
+  app.use('/api/session', createChatRouter(store, tempDir));
 
   vi.clearAllMocks();
   mockIsConfigured.mockReturnValue(true);

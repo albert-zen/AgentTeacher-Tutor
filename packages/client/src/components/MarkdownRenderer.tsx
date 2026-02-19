@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkSourceLine from '../utils/remarkSourceLine';
 import { Prism } from 'react-syntax-highlighter';
 import oneDark from 'react-syntax-highlighter/dist/esm/styles/prism/one-dark';
 import type { Components } from 'react-markdown';
@@ -27,7 +28,7 @@ const components: Components = {
 
 export default function MarkdownRenderer({ children }: { children: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkSourceLine]} components={components}>
       {children}
     </ReactMarkdown>
   );

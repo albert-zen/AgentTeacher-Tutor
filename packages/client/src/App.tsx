@@ -9,7 +9,7 @@ import ResizeHandle from './components/ResizeHandle';
 import LandingPage from './components/landing/LandingPage';
 import SessionPromptModal from './components/SessionPromptModal';
 import { useSession } from './hooks/useSession';
-import { useTextSelection } from './hooks/useTextSelection';
+import { useTextSelection, getSourceLineFromNode } from './hooks/useTextSelection';
 import * as api from './api/client';
 import type { CopySource } from './api/client';
 
@@ -74,15 +74,15 @@ export default function App() {
     const selectedText = sel.toString().trim();
     if (!selectedText) return;
 
-    const selStart = fileContent.indexOf(selectedText);
-    if (selStart === -1) return;
+    const anchorLine = sel.anchorNode ? getSourceLineFromNode(sel.anchorNode) : null;
+    const focusLine = sel.focusNode ? getSourceLineFromNode(sel.focusNode) : null;
+    if (!anchorLine && !focusLine) return;
 
-    const beforeSel = fileContent.slice(0, selStart);
-    const startLine = beforeSel.split('\n').length;
-    const endLine = startLine + selectedText.split('\n').length - 1;
+    const startLine = Math.min(anchorLine?.start ?? Infinity, focusLine?.start ?? Infinity);
+    const endLine = Math.max(anchorLine?.end ?? 0, focusLine?.end ?? 0);
 
     copySourceRef.current = { file: activeFile, startLine, endLine, text: selectedText };
-  }, [activeFile, fileContent]);
+  }, [activeFile]);
 
   useEffect(() => {
     if (!session || !activeFile || !files.includes(activeFile)) return;

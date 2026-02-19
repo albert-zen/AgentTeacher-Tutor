@@ -46,3 +46,12 @@ body,
 .animate-in {
   animation: modal-in 0.15s ease-out;
 }
+
+/* TipTap placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgb(113 113 122); /* zinc-500 */
+  pointer-events: none;
+  height: 0;
+}

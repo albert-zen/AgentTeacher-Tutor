@@ -7,20 +7,32 @@ export interface TextSelection {
   endLine: number;
 }
 
-export function useTextSelection() {
-  const handleSelection = useCallback((fileName: string, content: string): TextSelection | null => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      return null;
+export function getSourceLineFromNode(node: Node): { start: number; end: number } | null {
+  let el: HTMLElement | null = node instanceof HTMLElement ? node : node.parentElement;
+  while (el) {
+    const attr = el.getAttribute('data-source-line');
+    if (attr) {
+      const [s, e] = attr.split('-').map(Number);
+      if (!isNaN(s) && !isNaN(e)) return { start: s, end: e };
     }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+export function useTextSelection() {
+  const handleSelection = useCallback((fileName: string, _content: string): TextSelection | null => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return null;
 
     const selectedText = sel.toString().trim();
-    const selStart = content.indexOf(selectedText);
-    if (selStart === -1) return null;
+    const anchorLine = sel.anchorNode ? getSourceLineFromNode(sel.anchorNode) : null;
+    const focusLine = sel.focusNode ? getSourceLineFromNode(sel.focusNode) : null;
 
-    const beforeSel = content.slice(0, selStart);
-    const startLine = beforeSel.split('\n').length;
-    const endLine = startLine + selectedText.split('\n').length - 1;
+    if (!anchorLine && !focusLine) return null;
+
+    const startLine = Math.min(anchorLine?.start ?? Infinity, focusLine?.start ?? Infinity);
+    const endLine = Math.max(anchorLine?.end ?? 0, focusLine?.end ?? 0);
 
     return { text: selectedText, fileName, startLine, endLine };
   }, []);

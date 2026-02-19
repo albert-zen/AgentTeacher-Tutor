@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
 import type { FileRef, MessagePart, CopySource } from '../api/client';
 import { ReferenceChip } from '../extensions/referenceChip';
 import { serializeEditorContent, REF_PATTERN } from '../utils/serializeEditor';
@@ -181,6 +182,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         code: false,
       }),
       ReferenceChip,
+      Placeholder.configure({ placeholder: '输入消息...' }),
     ],
     content: '',
     editorProps: {
@@ -350,13 +352,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
 
       <div className="px-4 py-3 border-t border-zinc-800">
         <div className="flex gap-2">
-          <div className="relative flex-1 bg-zinc-800 border border-zinc-700 rounded-lg focus-within:border-blue-500 transition-colors">
+          <div className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg focus-within:border-blue-500 transition-colors">
             <EditorContent editor={editor} />
-            {isEmpty && (
-              <div className="absolute top-2 left-3 text-sm text-zinc-500 pointer-events-none select-none">
-                输入消息...
-              </div>
-            )}
           </div>
           {streaming ? (
             <button

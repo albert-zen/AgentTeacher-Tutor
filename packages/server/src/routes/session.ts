@@ -8,7 +8,7 @@ import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
 import { parseMilestones } from '../services/milestonesParser.js';
 import { createLLMClient, streamTeacherResponse, isLLMConfigured, loadLLMConfig } from '../services/llm.js';
-import { assembleContext } from '../services/contextAssembler.js';
+import { assembleContext } from '../services/contextCompiler.js';
 import { generateText, type ModelMessage } from 'ai';
 
 async function generateTitle(dataDir: string, store: Store, sessionId: string, userMessage: string) {

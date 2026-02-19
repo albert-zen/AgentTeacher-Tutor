@@ -1,5 +1,9 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type { FileRef, MessagePart, Attachment, CopySource } from '../api/client';
+import { useState, useRef, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import type { FileRef, MessagePart, CopySource } from '../api/client';
+import { ReferenceChip } from '../extensions/referenceChip';
+import { serializeEditorContent, extractReferencesFromText } from '../utils/serializeEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 
 interface Message {
@@ -15,16 +19,17 @@ interface Props {
   messages: Message[];
   streaming: boolean;
   streamingParts: MessagePart[];
-  attachments: Attachment[];
-  onRemoveAttachment: (index: number) => void;
-  onClearAttachments: () => void;
-  onAddAttachment: (att: Attachment) => void;
   copySource: React.RefObject<CopySource | null>;
   onSend: (message: string, references: FileRef[]) => void;
   onStop?: () => void;
   onReferenceClick?: (file: string, startLine?: number, endLine?: number) => void;
   failedMessage?: { message: string; references: FileRef[] } | null;
   onRetry?: () => void;
+}
+
+export interface ChatPanelHandle {
+  insertReference: (attrs: { file: string; startLine: number; endLine: number; preview: string }) => void;
+  insertText: (text: string) => void;
 }
 
 const REF_REGEX = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g;
@@ -77,7 +82,6 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
     if (part.toolName === 'write_file') return `Writing ${path ?? 'file'}...`;
     return `${part.toolName}...`;
   }
-  // tool-result: try to get path from result
   const resultPath = (part.result as Record<string, unknown>)?.data
     ? (((part.result as Record<string, unknown>).data as Record<string, unknown>)?.path as string | undefined)
     : undefined;
@@ -122,7 +126,6 @@ function ReferenceBadge({ fileRef, onClick }: { fileRef: FileRef; onClick?: Prop
   );
 }
 
-/** Render an ordered list of message parts (text interleaved with tool events) */
 function PartsRenderer({ parts, onRefClick }: { parts: MessagePart[]; onRefClick?: Props['onReferenceClick'] }) {
   return (
     <>
@@ -140,7 +143,6 @@ function PartsRenderer({ parts, onRefClick }: { parts: MessagePart[]; onRefClick
   );
 }
 
-/** Fallback renderer for old messages that only have toolEvents + content (no parts) */
 function LegacyRenderer({ msg, onRefClick }: { msg: Message; onRefClick?: Props['onReferenceClick'] }) {
   return (
     <>
@@ -160,53 +162,98 @@ function LegacyRenderer({ msg, onRefClick }: { msg: Message; onRefClick?: Props[
   );
 }
 
-function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRemove: () => void }) {
-  if (attachment.type === 'file-ref') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-900/40 border border-blue-700/50 rounded text-xs text-blue-400 shrink-0">
-        <span className="opacity-60">@</span>
-        <span>
-          {attachment.file} ({attachment.startLine}-{attachment.endLine})
-        </span>
-        <button onClick={onRemove} className="ml-0.5 text-blue-500/60 hover:text-blue-300">
-          &times;
-        </button>
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-zinc-700/50 border border-zinc-600/50 rounded text-xs text-zinc-400 max-w-[280px] shrink-0">
-      <span className="truncate">
-        &ldquo;{attachment.text.slice(0, 60)}
-        {attachment.text.length > 60 ? '...' : ''}&rdquo;
-      </span>
-      <button onClick={onRemove} className="ml-0.5 flex-shrink-0 text-zinc-500 hover:text-zinc-300">
-        &times;
-      </button>
-    </span>
-  );
-}
-
-export default function ChatPanel({
-  messages,
-  streaming,
-  streamingParts,
-  attachments,
-  onRemoveAttachment,
-  onClearAttachments,
-  onAddAttachment,
-  copySource,
-  onSend,
-  onStop,
-  onReferenceClick,
-  failedMessage,
-  onRetry,
-}: Props) {
-  const [input, setInput] = useState('');
+const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
+  { messages, streaming, streamingParts, copySource, onSend, onStop, onReferenceClick, failedMessage, onRetry },
+  ref,
+) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: false,
+        blockquote: false,
+        codeBlock: false,
+        bulletList: false,
+        orderedList: false,
+        listItem: false,
+        horizontalRule: false,
+        code: false,
+      }),
+      ReferenceChip,
+    ],
+    content: '',
+    editorProps: {
+      attributes: {
+        class: 'outline-none w-full min-h-[3rem] max-h-32 overflow-y-auto px-3 py-2 text-sm text-zinc-200',
+      },
+      handleKeyDown(_view, event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          handleSubmitRef.current();
+          return true;
+        }
+        return false;
+      },
+      handlePaste(_view, event) {
+        const source = copySource.current;
+        if (!source) return false;
+
+        const pastedText = event.clipboardData?.getData('text') ?? '';
+        if (pastedText.trim() === source.text.trim()) {
+          event.preventDefault();
+          editorRef.current?.commands.insertContent({
+            type: 'referenceChip',
+            attrs: {
+              file: source.file,
+              startLine: source.startLine,
+              endLine: source.endLine,
+              preview: pastedText.slice(0, 100),
+            },
+          });
+          copySource.current = null;
+          return true;
+        }
+        return false;
+      },
+    },
+  });
+
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
+  const handleSubmit = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed || streaming) return;
+    const text = serializeEditorContent(ed);
+    if (!text) return;
+    const refs = extractReferencesFromText(text);
+    onSend(text, refs);
+    ed.commands.clearContent();
+  }, [streaming, onSend]);
+
+  const handleSubmitRef = useRef(handleSubmit);
+  handleSubmitRef.current = handleSubmit;
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertReference(attrs: { file: string; startLine: number; endLine: number; preview: string }) {
+        editorRef.current?.commands.insertContent({
+          type: 'referenceChip',
+          attrs,
+        });
+        editorRef.current?.commands.focus();
+      },
+      insertText(text: string) {
+        editorRef.current?.commands.insertContent(text);
+        editorRef.current?.commands.focus();
+      },
+    }),
+    [],
+  );
 
   const handleScroll = useCallback(() => {
     const el = messagesContainerRef.current;
@@ -221,59 +268,7 @@ export default function ChatPanel({
     }
   }, [messages, streamingParts]);
 
-  // Focus input when attachments are added
-  const prevAttachLen = useRef(0);
-  useEffect(() => {
-    if (attachments.length > prevAttachLen.current) {
-      inputRef.current?.focus();
-    }
-    prevAttachLen.current = attachments.length;
-  }, [attachments.length]);
-
-  // Smart paste: if clipboard matches tracked copy source, create file-ref chip
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => {
-      const source = copySource.current;
-      if (!source) return;
-
-      const pastedText = e.clipboardData.getData('text');
-      if (pastedText.trim() === source.text.trim()) {
-        e.preventDefault();
-        onAddAttachment({
-          type: 'file-ref',
-          file: source.file,
-          startLine: source.startLine,
-          endLine: source.endLine,
-          preview: pastedText.slice(0, 100),
-        });
-        copySource.current = null; // consume the source
-      }
-    },
-    [copySource, onAddAttachment],
-  );
-
-  const handleSubmit = () => {
-    const text = input.trim();
-    if (!text || streaming) return;
-
-    const refs: FileRef[] = [];
-    const prefixParts: string[] = [];
-
-    for (const att of attachments) {
-      if (att.type === 'file-ref') {
-        refs.push({ file: att.file, startLine: att.startLine, endLine: att.endLine });
-        prefixParts.push(`[${att.file}:${att.startLine}:${att.endLine}]`);
-      } else {
-        prefixParts.push(`> ${att.text.replace(/\n/g, '\n> ')}`);
-      }
-    }
-
-    const msg = prefixParts.length > 0 ? `${prefixParts.join('\n\n')}\n\n${text}` : text;
-
-    onSend(msg, refs);
-    setInput('');
-    onClearAttachments();
-  };
+  const isEmpty = !editor || editor.isEmpty;
 
   return (
     <div className="h-full flex flex-col bg-zinc-950">
@@ -281,7 +276,6 @@ export default function ChatPanel({
         <span className="text-sm font-semibold text-zinc-400">Teacher</span>
       </div>
 
-      {/* Messages — memoized to avoid re-render on every keystroke */}
       <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {useMemo(
           () => (
@@ -356,38 +350,15 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* Input area: chips + textarea in one visual container */}
       <div className="px-4 py-3 border-t border-zinc-800">
         <div className="flex gap-2">
-          <div className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg focus-within:border-blue-500 transition-colors">
-            {/* Attachment chips */}
-            {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-1 px-3 pt-2">
-                {attachments.map((att, i) => (
-                  <AttachmentChip key={i} attachment={att} onRemove={() => onRemoveAttachment(i)} />
-                ))}
+          <div className="relative flex-1 bg-zinc-800 border border-zinc-700 rounded-lg focus-within:border-blue-500 transition-colors">
+            <EditorContent editor={editor} />
+            {isEmpty && (
+              <div className="absolute top-2 left-3 text-sm text-zinc-500 pointer-events-none select-none">
+                输入消息...
               </div>
             )}
-            {/* Text input */}
-            <textarea
-              ref={inputRef}
-              rows={2}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onPaste={handlePaste}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit();
-                }
-                // Backspace with empty input removes last attachment
-                if (e.key === 'Backspace' && !input && attachments.length > 0) {
-                  onRemoveAttachment(attachments.length - 1);
-                }
-              }}
-              placeholder={attachments.length > 0 ? '针对引用内容提问...' : '输入消息...'}
-              className="w-full bg-transparent px-3 py-2 text-sm text-zinc-200 resize-none outline-none placeholder-zinc-500"
-            />
           </div>
           {streaming ? (
             <button
@@ -402,7 +373,7 @@ export default function ChatPanel({
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={!input.trim()}
+              disabled={isEmpty}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm self-end"
             >
               发送
@@ -412,4 +383,6 @@ export default function ChatPanel({
       </div>
     </div>
   );
-}
+});
+
+export default ChatPanel;

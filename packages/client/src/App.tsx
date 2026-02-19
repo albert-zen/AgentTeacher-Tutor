@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import FileTree from './components/FileTree';
 import MarkdownEditor from './components/MarkdownEditor';
 import ChatPanel from './components/ChatPanel';
+import type { ChatPanelHandle } from './components/ChatPanel';
 import MilestoneBar from './components/MilestoneBar';
 import SelectionPopup from './components/SelectionPopup';
 import ResizeHandle from './components/ResizeHandle';
@@ -10,7 +11,7 @@ import SessionPromptModal from './components/SessionPromptModal';
 import { useSession } from './hooks/useSession';
 import { useTextSelection } from './hooks/useTextSelection';
 import * as api from './api/client';
-import type { Attachment, CopySource } from './api/client';
+import type { CopySource } from './api/client';
 
 export default function App() {
   const {
@@ -36,9 +37,8 @@ export default function App() {
   const [fileContent, setFileContent] = useState('');
   const [milestonesContent, setMilestonesContent] = useState('');
 
-  // Attachments (file refs + quotes) for the chat input
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const copySourceRef = useRef<CopySource | null>(null);
+  const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const [editingSessionPrompt, setEditingSessionPrompt] = useState(false);
   const [fileTreeWidth, setFileTreeWidth] = useState(208);
@@ -67,19 +67,6 @@ export default function App() {
     setChatWidth(chatWidthRef.current);
   }, []);
 
-  const addAttachment = useCallback((att: Attachment) => {
-    setAttachments((prev) => [...prev, att]);
-  }, []);
-
-  const removeAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const clearAttachments = useCallback(() => {
-    setAttachments([]);
-  }, []);
-
-  // Track copy source when copying from the editor
   const handleEditorCopy = useCallback(() => {
     if (!activeFile) return;
     const sel = window.getSelection();
@@ -97,7 +84,6 @@ export default function App() {
     copySourceRef.current = { file: activeFile, startLine, endLine, text: selectedText };
   }, [activeFile, fileContent]);
 
-  // Load file content when active file or file list changes
   useEffect(() => {
     if (!session || !activeFile || !files.includes(activeFile)) return;
     let stale = false;
@@ -114,7 +100,6 @@ export default function App() {
     };
   }, [session, activeFile, files]);
 
-  // Auto-select guidance.md when files change
   useEffect(() => {
     if (files.length > 0 && !activeFile) {
       const guidance = files.find((f) => f === 'guidance.md');
@@ -122,7 +107,6 @@ export default function App() {
     }
   }, [files, activeFile]);
 
-  // Load milestones whenever files refresh
   useEffect(() => {
     if (!session || !files.includes('milestones.md')) return;
     let stale = false;
@@ -175,7 +159,6 @@ export default function App() {
     [files],
   );
 
-  // Load past sessions on mount and when returning to landing page
   useEffect(() => {
     if (!session) {
       api
@@ -190,14 +173,12 @@ export default function App() {
     setActiveFile(null);
   };
 
-  // No session: show landing page
   if (!session) {
     return <LandingPage sessions={pastSessions} onStart={startSession} onLoadSession={handleLoadSession} />;
   }
 
   return (
     <div className="h-full flex flex-col bg-zinc-950">
-      {/* Session Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900 flex-shrink-0">
         <div className="flex items-center gap-2">
           <button
@@ -221,9 +202,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main workspace */}
       <div className="flex-1 flex min-h-0">
-        {/* File Tree */}
         <div ref={fileTreeRef} className="flex-shrink-0 border-r border-zinc-800" style={{ width: fileTreeWidth }}>
           <FileTree
             files={files}
@@ -236,7 +215,6 @@ export default function App() {
 
         <ResizeHandle onResize={handleFileTreeResize} onResizeEnd={handleFileTreeResizeEnd} />
 
-        {/* Editor Area */}
         <div className="flex-1 flex flex-col min-w-0">
           <MilestoneBar content={milestonesContent} />
           {activeFile ? (
@@ -259,16 +237,12 @@ export default function App() {
 
         <ResizeHandle onResize={handleChatResize} onResizeEnd={handleChatResizeEnd} />
 
-        {/* Chat Panel */}
         <div ref={chatRef} className="flex-shrink-0 border-l border-zinc-800" style={{ width: chatWidth }}>
           <ChatPanel
+            ref={chatPanelRef}
             messages={messages}
             streaming={streaming}
             streamingParts={streamingParts}
-            attachments={attachments}
-            onRemoveAttachment={removeAttachment}
-            onClearAttachments={clearAttachments}
-            onAddAttachment={addAttachment}
             copySource={copySourceRef}
             onSend={send}
             onStop={stopStreaming}
@@ -289,18 +263,16 @@ export default function App() {
 
       <SelectionPopup
         onAsk={(selectedText) => {
-          // Try to map DOM selection to a file reference
           const fileRef = activeFile ? handleSelection(activeFile, fileContent) : null;
           if (fileRef) {
-            addAttachment({
-              type: 'file-ref',
+            chatPanelRef.current?.insertReference({
               file: fileRef.fileName,
               startLine: fileRef.startLine,
               endLine: fileRef.endLine,
               preview: selectedText.slice(0, 100),
             });
           } else {
-            addAttachment({ type: 'quote', text: selectedText });
+            chatPanelRef.current?.insertText(`> ${selectedText.replace(/\n/g, '\n> ')}\n\n`);
           }
         }}
       />

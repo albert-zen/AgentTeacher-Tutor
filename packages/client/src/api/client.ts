@@ -30,6 +30,8 @@ export interface ChatMessage {
   sessionId: string;
   role: 'user' | 'assistant';
   content: string;
+  /** User message with inline references resolved to <selection> tags */
+  resolvedContent?: string;
   references?: FileRef[];
   toolEvents?: ToolEvent[];
   parts?: MessagePart[];

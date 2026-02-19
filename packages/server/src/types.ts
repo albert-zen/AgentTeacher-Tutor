@@ -69,6 +69,8 @@ export interface ChatMessage {
   sessionId: string;
   role: 'user' | 'assistant';
   content: string;
+  /** User message with inline references resolved to <selection> tags */
+  resolvedContent?: string;
   references?: FileReference[];
   /** Tool events that occurred during this response (agent layer, optional) */
   toolEvents?: ToolEvent[];

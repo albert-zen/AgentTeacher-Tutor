@@ -7,17 +7,30 @@ export interface TextSelection {
   endLine: number;
 }
 
+/**
+ * Walk up from `node` to find the nearest `data-source-line` attribute,
+ * but only if the node is inside a `[data-editor-content]` container
+ * (prevents matching line attrs in chat message markdown).
+ */
 export function getSourceLineFromNode(node: Node): { start: number; end: number } | null {
   let el: HTMLElement | null = node instanceof HTMLElement ? node : node.parentElement;
+  let result: { start: number; end: number } | null = null;
+  let insideEditor = false;
   while (el) {
-    const attr = el.getAttribute('data-source-line');
-    if (attr) {
-      const [s, e] = attr.split('-').map(Number);
-      if (!isNaN(s) && !isNaN(e)) return { start: s, end: e };
+    if (!result) {
+      const attr = el.getAttribute('data-source-line');
+      if (attr) {
+        const [s, e] = attr.split('-').map(Number);
+        if (!isNaN(s) && !isNaN(e)) result = { start: s, end: e };
+      }
+    }
+    if (el.hasAttribute('data-editor-content')) {
+      insideEditor = true;
+      break;
     }
     el = el.parentElement;
   }
-  return null;
+  return insideEditor ? result : null;
 }
 
 export function useTextSelection() {

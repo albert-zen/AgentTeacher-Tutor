@@ -68,7 +68,7 @@ export default function MarkdownEditor({ fileName, content, readOnly, isWriting,
           <span className="text-xs text-blue-400">Writing...</span>
         </div>
       )}
-      <div className="flex-1 overflow-y-auto" onMouseUp={onMouseUp} onCopy={onCopy}>
+      <div className="flex-1 overflow-y-auto" data-editor-content onMouseUp={onMouseUp} onCopy={onCopy}>
         {editing ? (
           <textarea
             value={editContent}

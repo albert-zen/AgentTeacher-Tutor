@@ -267,7 +267,17 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
     }
   }, [messages, streamingParts]);
 
-  const isEmpty = !editor || editor.isEmpty;
+  const hasChips = editor?.state.doc.nodeSize
+    ? (() => {
+        let found = false;
+        editor.state.doc.descendants((node) => {
+          if (node.type.name === 'referenceChip' || node.type.name === 'quoteChip') found = true;
+          return !found;
+        });
+        return found;
+      })()
+    : false;
+  const isEmpty = !editor || (!editor.state.doc.textContent.trim() && !hasChips);
 
   return (
     <div className="h-full flex flex-col bg-zinc-950">

@@ -31,6 +31,17 @@
 - [x] 流式处理中指示器（弹跳圆点 + "处理中" 文字）
 - [x] ChatPanel 输入性能优化（useMemo 缓存消息列表）
 - [x] 测试覆盖：56 → 150 tests（P0 SSE 聊天流 20 + P0 客户端状态机 16 + P1 数据层 14 + P2 补全 16 + session prompt 6 + context assembler 6 + profile parser 4）
+- [x] Context Compiler 完整化：`contextCompiler.ts` 实现 5 阶段流水线，XML 结构化系统提示，历史消息 `resolvedContent` 持久化，路由拆分 `session.ts` + `chat.ts`
+- [x] TipTap 富文本编辑器：替换 textarea，`referenceChip` 内联引用标签，`quoteChip` 引用标签，智能粘贴
+- [x] 多行选中 → 文件引用（`remarkSourceLine` 插件注入 `data-source-line` + DOM 行号读取，替代 `indexOf`）
+- [x] 内联引用 chips（TipTap `referenceChip` + `quoteChip` 节点，光标位置插入，序列化为 `[file:s:e]` / `> 引用块`）
+- [x] 流式输出性能优化：streaming 内容拆出 useMemo，历史消息不再随 text-delta 重渲染
+- [x] 发送按钮 disabled 状态修复：支持 chip-only 内容检测
+- [x] 双重引用显示修复：删除旧 ReferenceBadge，统一由 MessageContent inline 解析
+- [x] P0 安全：DELETE 路径穿越修复（FileService.deleteFile 沙箱校验）
+- [x] P1 客户端健壮性：`assertOk(res)` 全 19 个 fetch 调用 + streamChat 错误事件
+- [x] P1 死代码清理：teacher.ts/referenceParser.ts/milestonesParser.ts/types.ts/useTextSelection.ts
+- [x] P2 文件加载竞态：stale flag + effect 合并
 
 ---
 
@@ -162,17 +173,6 @@
 
 ---
 
-### 多行选中 → 文件引用（行号精确映射）
-
-**现状：** `content.indexOf(selectedText)` 匹配原文行号，多行或含格式的选中文本无法匹配（渲染文本 ≠ 源码）。
-
-**目标：** 选中编辑器中任意多行内容，"Add to Chat" 后正确识别源文件行号范围。
-
-**工程要点：**
-- 自定义 ReactMarkdown renderer，注入 `data-source-line` 属性
-- 从 DOM Selection 的 anchorNode/focusNode 读取行号反推范围
-- 智能粘贴路径不受影响，已可处理多行
-
 ---
 
 ## Tier 3: Agent 能力扩展
@@ -243,20 +243,6 @@
 
 ## Tier 4: 交互进阶（工作量大，当前方案够用）
 
-### 内联引用 chips
-
-**现状：** chips 集中出现在 textarea 上方，与文本输入分离。
-
-**目标：** 像 Cursor 一样，引用 chip 与普通文字混排在同一个输入区域内。
-
-**工程要点：**
-- `<textarea>` 无法渲染 HTML 节点，需替换为 `contentEditable` 或富文本编辑器库
-- 候选方案：TipTap（ProseMirror）、Slate.js
-- 需处理：光标定位、chip 插入/删除/键盘导航、内容序列化（chip → `[file:start:end]`）
-- ChatPanel 输入区域重写 + 新增依赖
-
----
-
 ### 聊天历史文件化 + Fork
 
 **理念：** "Everything is a file"——聊天记录是可编辑文件，非只读消息流。
@@ -308,10 +294,11 @@
 以下不是独立需求，而是随项目演进需持续关注的架构问题：
 
 - **Session 模型保持薄**：`Session` 只是目录指针（`{ id, concept, createdAt }`），所有丰富度来自 `data/{sessionId}/` 目录下的文件。新增能力 = 新增文件约定，不加 Session 字段，不做 schema migration。
-- **上下文编排器是核心**：`contextAssembler.ts` 已实现核心框架，整合 system prompt + session 指令 + profile 分块。下一步是客户端可视化面板和更多上下文源接入。
+- **Context Compiler 已完成**：`contextCompiler.ts` 实现 5 阶段流水线（prompt 解析 → profile 选择 → 引用解析 → XML 格式化 → 消息构建）。路由已拆分为 `session.ts`（CRUD）+ `chat.ts`（SSE）。下一步是客户端可视化面板。
 - **存储层抽象**：当前 JSON 文件存储无锁无并发。单用户没问题，但多端同步前需抽象 Store interface。`updateSession` 已新增。
 - **客户端测试已建立**：vitest + jsdom + @testing-library/react。`useSession` hook 16 tests，`streamChat` 6 tests。新功能应同步补测试。
-- **性能已优化**：面板拖拽用 ref + 直接 DOM（零重渲染），ChatPanel 输入用 useMemo 跳过消息列表重渲染。后续注意 session 文件数量增长时 API 性能。
+- **性能已优化**：面板拖拽用 ref + 直接 DOM（零重渲染），ChatPanel 消息列表 useMemo 只依赖 `[messages]`，流式内容拆出 useMemo 避免重渲染历史。后续注意 session 文件数量增长时 API 性能。
+- **富文本输入已实现**：TipTap 编辑器 + `referenceChip`（文件引用）+ `quoteChip`（文本引用）inline 节点。`serializeEditorContent` 序列化为纯文本 + `[file:s:e]` + `> 引用块`。
 
 ---
 
@@ -331,30 +318,27 @@
 
   ✅ Tier 1 全部 8 项完成
 
+  ✅ Context Compiler 完整化
+    └→ 自然修复: context-config / references 死代码 / 引用去重 / 历史缺引用
+  ✅ 多行选中 → 文件引用（remarkSourceLine + DOM 行号读取）
+  ✅ 内联引用 chips（TipTap referenceChip + quoteChip）
+  ✅ P0-P2 bug 修复（安全/健壮性/死代码/竞态）
+
 待完成:
   Session 切换与退出时里程碑状态隔离（独立）
 
   ChatPanel 对话布局改为单列左对齐（独立）
 
-  聊天自动滚动流式抽搐修复（独立）
-
-  结构化 LLM 上下文 + Context Compiler
-    └→ 依赖 ✅ Context Assembler 核心
-    └→ 自然修复: context-config 接入 chat / references 死代码 / 引用去重 / 历史缺引用
+  聊天自动滚动流式期间无法上滚（独立）
 
   上下文编排器 Phase 2（可见的上下文面板）
-    └→ 依赖: 结构化 LLM 上下文 + Context Compiler
-
-  多行选中 → 文件引用（独立）
+    └→ 依赖: ✅ Context Compiler
 
   Teacher Agent 互联网搜索（独立）
     └→ 导出功能（搜索结果可纳入导出）
 
   视觉输入支持
     └→ 依赖多模态 LLM（模型层面）
-
-  内联引用 chips（Tier 4）
-    └→ 需先稳定 多行选中 → 文件引用
 
   聊天历史文件化 + Fork（Tier 4）
     └→ 多 Session 间共享文件 / 跨 Session 引用（Tier 3）

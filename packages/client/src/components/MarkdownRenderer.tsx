@@ -18,10 +18,17 @@ const components: Components = {
       );
     }
 
+    const sourceLine = (rest as Record<string, unknown>)['data-source-line'] as string | undefined;
     return (
-      <Prism style={oneDark} language={match[1]} customStyle={{ borderRadius: '0.375rem', padding: '1rem', margin: 0 }}>
-        {text}
-      </Prism>
+      <div data-source-line={sourceLine}>
+        <Prism
+          style={oneDark}
+          language={match[1]}
+          customStyle={{ borderRadius: '0.375rem', padding: '1rem', margin: 0 }}
+        >
+          {text}
+        </Prism>
+      </div>
     );
   },
 };

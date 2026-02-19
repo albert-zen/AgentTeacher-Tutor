@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { FileService } from './fileService.js';
-import { executeToolCall } from './teacher.js';
 
 export interface LLMConfig {
   provider: string;
@@ -67,7 +66,12 @@ export function buildTools(fileService: FileService) {
         endLine: z.number().optional().describe('End line (1-based, inclusive)'),
       }),
       execute: async (args) => {
-        return executeToolCall(fileService, 'read_file', args);
+        try {
+          const data = fileService.readFile(args);
+          return { success: true, data };
+        } catch (err: unknown) {
+          return { success: false, error: err instanceof Error ? err.message : String(err) };
+        }
       },
     }),
     write_file: tool({
@@ -80,7 +84,12 @@ export function buildTools(fileService: FileService) {
         endLine: z.number().optional().describe('End line for partial replace (1-based, inclusive)'),
       }),
       execute: async (args) => {
-        return executeToolCall(fileService, 'write_file', args);
+        try {
+          fileService.writeFile(args);
+          return { success: true, data: { path: args.path, written: true } };
+        } catch (err: unknown) {
+          return { success: false, error: err instanceof Error ? err.message : String(err) };
+        }
       },
     }),
   };

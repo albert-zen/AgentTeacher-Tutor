@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import type { FileRef, MessagePart, CopySource } from '../api/client';
 import { ReferenceChip } from '../extensions/referenceChip';
-import { serializeEditorContent, extractReferencesFromText, REF_PATTERN } from '../utils/serializeEditor';
+import { serializeEditorContent, REF_PATTERN } from '../utils/serializeEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 
 interface Message {
@@ -20,10 +20,10 @@ interface Props {
   streaming: boolean;
   streamingParts: MessagePart[];
   copySource: React.RefObject<CopySource | null>;
-  onSend: (message: string, references: FileRef[]) => void;
+  onSend: (message: string) => void;
   onStop?: () => void;
   onReferenceClick?: (file: string, startLine?: number, endLine?: number) => void;
-  failedMessage?: { message: string; references: FileRef[] } | null;
+  failedMessage?: { message: string } | null;
   onRetry?: () => void;
 }
 
@@ -227,8 +227,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
     if (!ed || streaming) return;
     const text = serializeEditorContent(ed);
     if (!text) return;
-    const refs = extractReferencesFromText(text);
-    onSend(text, refs);
+    onSend(text);
     ed.commands.clearContent();
   }, [streaming, onSend]);
 

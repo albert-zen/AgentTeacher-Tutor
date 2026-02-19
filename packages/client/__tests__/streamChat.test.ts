@@ -35,7 +35,7 @@ describe('streamChat SSE parsing', () => {
   it('parses data: lines and calls onEvent', async () => {
     const events: SSEEvent[] = [];
     vi.mocked(fetch).mockResolvedValue(createMockResponse(['data: {"type":"text-delta","content":"hi"}\n\n']));
-    streamChat('s1', 'hello', undefined, (e) => events.push(e));
+    streamChat('s1', 'hello', (e) => events.push(e));
     await vi.waitFor(() => expect(events).toHaveLength(1));
     expect(events[0]).toEqual({ type: 'text-delta', content: 'hi' });
   });
@@ -44,7 +44,7 @@ describe('streamChat SSE parsing', () => {
   it('buffers partial chunks across reads', async () => {
     const events: SSEEvent[] = [];
     vi.mocked(fetch).mockResolvedValue(createMockResponse(['data: {"type":"text-', 'delta","content":"hi"}\n\n']));
-    streamChat('s1', 'hello', undefined, (e) => events.push(e));
+    streamChat('s1', 'hello', (e) => events.push(e));
     await vi.waitFor(() => expect(events).toHaveLength(1));
     expect(events[0]).toEqual({ type: 'text-delta', content: 'hi' });
   });
@@ -55,7 +55,7 @@ describe('streamChat SSE parsing', () => {
     vi.mocked(fetch).mockResolvedValue(
       createMockResponse(['data: {"type":"text-delta","content":"a"}\ndata: {"type":"text-delta","content":"b"}\n\n']),
     );
-    streamChat('s1', 'hello', undefined, (e) => events.push(e));
+    streamChat('s1', 'hello', (e) => events.push(e));
     await vi.waitFor(() => expect(events).toHaveLength(2));
     expect(events[0]).toEqual({ type: 'text-delta', content: 'a' });
     expect(events[1]).toEqual({ type: 'text-delta', content: 'b' });
@@ -65,7 +65,7 @@ describe('streamChat SSE parsing', () => {
   it('skips invalid JSON in data lines', async () => {
     const events: SSEEvent[] = [];
     vi.mocked(fetch).mockResolvedValue(createMockResponse(['data: NOT JSON\ndata: {"type":"done"}\n\n']));
-    streamChat('s1', 'hello', undefined, (e) => events.push(e));
+    streamChat('s1', 'hello', (e) => events.push(e));
     await vi.waitFor(() => expect(events).toHaveLength(1));
     expect(events[0]).toEqual({ type: 'done' });
   });
@@ -83,7 +83,7 @@ describe('streamChat SSE parsing', () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response('Internal Server Error', { status: 500, statusText: 'Internal Server Error' }),
     );
-    streamChat('s1', 'hello', undefined, (e) => events.push(e));
+    streamChat('s1', 'hello', (e) => events.push(e));
     await vi.waitFor(() => expect(events).toHaveLength(1));
     expect(events[0]).toEqual({ type: 'error', error: 'API error 500: Internal Server Error' });
   });

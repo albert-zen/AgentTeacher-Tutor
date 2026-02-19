@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import * as api from '../api/client';
 import type { SSEEvent, MessagePart } from '../api/client';
+import { extractReferencesFromText } from '../utils/serializeEditor';
 
 export function useSession() {
   const [session, setSession] = useState<api.Session | null>(null);
@@ -9,10 +10,7 @@ export function useSession() {
   const [streaming, setStreaming] = useState(false);
   const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
   const [writingFile, setWritingFile] = useState<string | null>(null);
-  const [failedMessage, setFailedMessage] = useState<{
-    message: string;
-    references: api.FileRef[];
-  } | null>(null);
+  const [failedMessage, setFailedMessage] = useState<{ message: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sessionRef = useRef<api.Session | null>(null);
 
@@ -27,16 +25,17 @@ export function useSession() {
   }, [refreshFilesBySessionId]);
 
   const sendMessage = useCallback(
-    (sessionId: string, message: string, references: api.FileRef[]) => {
+    (sessionId: string, message: string) => {
       setStreaming(true);
       setStreamingParts([]);
       setFailedMessage(null);
+      const refs = extractReferencesFromText(message);
       const userMsg: api.ChatMessage = {
         id: Date.now().toString(),
         sessionId,
         role: 'user',
         content: message,
-        references: references.length > 0 ? references : undefined,
+        references: refs.length > 0 ? refs : undefined,
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -45,7 +44,7 @@ export function useSession() {
       const parts: MessagePart[] = [];
       let currentTextPart: (MessagePart & { type: 'text' }) | null = null;
 
-      abortRef.current = api.streamChat(sessionId, message, references, (event: SSEEvent) => {
+      abortRef.current = api.streamChat(sessionId, message, (event: SSEEvent) => {
         if (event.type === 'text-delta') {
           const delta = event.content ?? '';
           fullText += delta;
@@ -99,7 +98,7 @@ export function useSession() {
           setStreaming(false);
           setStreamingParts([]);
           setWritingFile(null);
-          setFailedMessage({ message, references });
+          setFailedMessage({ message });
           setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
         }
       });
@@ -114,7 +113,7 @@ export function useSession() {
       sessionRef.current = sess;
       setMessages([]);
       setFiles([]);
-      sendMessage(sess.id, concept, []);
+      sendMessage(sess.id, concept);
     },
     [sendMessage],
   );
@@ -131,18 +130,18 @@ export function useSession() {
   );
 
   const send = useCallback(
-    (message: string, references: api.FileRef[] = []) => {
+    (message: string) => {
       if (!sessionRef.current) return;
-      sendMessage(sessionRef.current.id, message, references);
+      sendMessage(sessionRef.current.id, message);
     },
     [sendMessage],
   );
 
   const retrySend = useCallback(() => {
     if (!failedMessage || !sessionRef.current) return;
-    const { message, references } = failedMessage;
+    const { message } = failedMessage;
     setFailedMessage(null);
-    sendMessage(sessionRef.current.id, message, references);
+    sendMessage(sessionRef.current.id, message);
   }, [failedMessage, sendMessage]);
 
   const clearSession = useCallback(() => {

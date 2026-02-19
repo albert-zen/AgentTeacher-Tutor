@@ -22,7 +22,7 @@ const SESSION: api.Session = { id: 's1', concept: 'test', createdAt: '2025-01-01
 
 function setupStreamMock(events: api.SSEEvent[]) {
   const controller = new AbortController();
-  mockStreamChat.mockImplementation((_sid, _msg, _refs, onEvent) => {
+  mockStreamChat.mockImplementation((_sid, _msg, onEvent) => {
     setTimeout(() => {
       events.forEach((e) => onEvent?.(e));
     }, 0);
@@ -91,7 +91,7 @@ describe('useSession', () => {
 
     expect(mockCreateSession).toHaveBeenCalledWith('React hooks');
     expect(result.current.session).toEqual(SESSION);
-    expect(mockStreamChat).toHaveBeenCalledWith('s1', 'React hooks', [], expect.any(Function));
+    expect(mockStreamChat).toHaveBeenCalledWith('s1', 'React hooks', expect.any(Function));
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].role).toBe('user');
     expect(result.current.messages[0].content).toBe('React hooks');
@@ -166,7 +166,7 @@ describe('useSession', () => {
     });
 
     expect(result.current.streaming).toBe(true);
-    expect(mockStreamChat).toHaveBeenCalledWith('s1', 'hello teacher', [], expect.any(Function));
+    expect(mockStreamChat).toHaveBeenCalledWith('s1', 'hello teacher', expect.any(Function));
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].role).toBe('user');
     expect(result.current.messages[0].content).toBe('hello teacher');

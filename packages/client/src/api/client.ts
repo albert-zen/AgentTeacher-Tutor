@@ -234,18 +234,13 @@ export interface SSEEvent {
   error?: string;
 }
 
-export function streamChat(
-  sessionId: string,
-  message: string,
-  references?: FileRef[],
-  onEvent?: (event: SSEEvent) => void,
-): AbortController {
+export function streamChat(sessionId: string, message: string, onEvent?: (event: SSEEvent) => void): AbortController {
   const controller = new AbortController();
 
   fetch(`${BASE}/session/${sessionId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, references }),
+    body: JSON.stringify({ message }),
     signal: controller.signal,
   })
     .then(async (res) => {

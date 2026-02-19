@@ -272,8 +272,7 @@ export default function App() {
               preview: selectedText.slice(0, 100),
             });
           } else {
-            const trimmed = selectedText.length > 200 ? selectedText.slice(0, 200) + '...' : selectedText;
-            chatPanelRef.current?.insertText(`"${trimmed.replace(/\n/g, ' ')}" `);
+            chatPanelRef.current?.insertQuote(selectedText);
           }
         }}
       />

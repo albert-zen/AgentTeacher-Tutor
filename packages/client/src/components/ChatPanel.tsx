@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import type { FileRef, MessagePart, CopySource } from '../api/client';
 import { ReferenceChip } from '../extensions/referenceChip';
+import { QuoteChip } from '../extensions/quoteChip';
 import { serializeEditorContent, REF_PATTERN } from '../utils/serializeEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 
@@ -30,6 +31,7 @@ interface Props {
 
 export interface ChatPanelHandle {
   insertReference: (attrs: { file: string; startLine: number; endLine: number; preview: string }) => void;
+  insertQuote: (text: string) => void;
   insertText: (text: string) => void;
 }
 
@@ -182,6 +184,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         code: false,
       }),
       ReferenceChip,
+      QuoteChip,
       Placeholder.configure({ placeholder: '输入消息...' }),
     ],
     content: '',
@@ -243,6 +246,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         editorRef.current?.commands.insertContent({
           type: 'referenceChip',
           attrs,
+        });
+        editorRef.current?.commands.focus();
+      },
+      insertQuote(text: string) {
+        editorRef.current?.commands.insertContent({
+          type: 'quoteChip',
+          attrs: { text },
         });
         editorRef.current?.commands.focus();
       },

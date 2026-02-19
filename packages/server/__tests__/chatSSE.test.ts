@@ -136,52 +136,6 @@ describe('Reference resolution', () => {
     expect(lastMsg.content).toContain('lines="1-2"');
   });
 
-  // E2
-  it('appends explicit references[] with content', async () => {
-    const session = await createSession();
-
-    mockStreamTeacher.mockResolvedValue(mockStream([{ type: 'text-delta', text: 'ok' }]) as any);
-
-    await request(app)
-      .post(`/api/session/${session.id}/chat`)
-      .send({
-        message: 'check this',
-        references: [{ filePath: 'snippet.ts', content: 'const x = 1;' }],
-      });
-
-    const call = mockStreamTeacher.mock.calls[0];
-    const llmMessages = call[2] as Array<{ role: string; content: string }>;
-    const lastMsg = llmMessages[llmMessages.length - 1];
-    expect(lastMsg.content).toContain('const x = 1;');
-    expect(lastMsg.content).toContain('<selection');
-    expect(lastMsg.content).toContain('snippet.ts');
-  });
-
-  // E3
-  it('merges both inline and explicit references', async () => {
-    const session = await createSession();
-    mkdirSync(join(tempDir, session.id), { recursive: true });
-    writeFileSync(join(tempDir, session.id, 'guide.md'), 'alpha\nbeta\ngamma\n');
-
-    mockStreamTeacher.mockResolvedValue(mockStream([{ type: 'text-delta', text: 'ok' }]) as any);
-
-    await request(app)
-      .post(`/api/session/${session.id}/chat`)
-      .send({
-        message: 'look at [guide.md:1:1]',
-        references: [{ filePath: 'extra.md', content: 'bonus' }],
-      });
-
-    const call = mockStreamTeacher.mock.calls[0];
-    const llmMessages = call[2] as Array<{ role: string; content: string }>;
-    const lastMsg = llmMessages[llmMessages.length - 1];
-    expect(lastMsg.content).toContain('<selection');
-    expect(lastMsg.content).toContain('alpha');
-    expect(lastMsg.content).toContain('guide.md');
-    expect(lastMsg.content).toContain('extra.md');
-    expect(lastMsg.content).toContain('bonus');
-  });
-
   // X3
   it('skips non-existent referenced file silently', async () => {
     const session = await createSession();

@@ -13,6 +13,7 @@ import {
   compileContext,
 } from '../src/services/contextCompiler.js';
 import { Store } from '../src/db/index.js';
+import { FileService } from '../src/services/fileService.js';
 
 let tempDir: string;
 
@@ -422,18 +423,17 @@ describe('compileContext integration', () => {
     expect(result.messages[0]).toEqual({ role: 'user', content: 'plain question' });
   });
 
-  it('merges explicit refs when provided', () => {
+  it('resolves inline references in message', () => {
     const store = new Store(tempDir);
-    const sessionId = 'explicit-sess';
-    store.createSession({ id: sessionId, concept: 'explicit', createdAt: new Date().toISOString() });
+    const sessionId = 'inline-sess';
+    store.createSession({ id: sessionId, concept: 'inline', createdAt: new Date().toISOString() });
+    const svc = new FileService(join(tempDir, sessionId));
+    svc.writeFile({ path: 'notes.md', content: 'line1\nline2\nline3' });
 
-    const result = compileContext(tempDir, store, sessionId, 'see this', {
-      explicitRefs: [{ filePath: 'snippet.ts', content: 'const x = 1;' }],
-    });
+    const result = compileContext(tempDir, store, sessionId, 'see [notes.md:1:2]');
 
-    expect(result.resolvedUserContent).toContain('see this');
     expect(result.resolvedUserContent).toContain('<selection');
-    expect(result.resolvedUserContent).toContain('snippet.ts');
-    expect(result.resolvedUserContent).toContain('const x = 1;');
+    expect(result.resolvedUserContent).toContain('notes.md');
+    expect(result.resolvedUserContent).toContain('line1');
   });
 });

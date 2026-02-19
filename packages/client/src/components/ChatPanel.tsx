@@ -274,7 +274,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
 
   useEffect(() => {
     if (isNearBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const el = messagesContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
     }
   }, [messages, streamingParts]);
 
@@ -288,65 +289,62 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
 
       <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         {useMemo(
-          () => (
-            <>
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
-                      msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'
-                    }`}
-                  >
-                    {msg.role === 'user' && msg.references && msg.references.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-1.5">
-                        {msg.references.map((r, i) => (
-                          <ReferenceBadge key={i} fileRef={r} onClick={onReferenceClick} />
-                        ))}
-                      </div>
-                    )}
-
-                    {msg.role === 'assistant' ? (
-                      msg.parts && msg.parts.length > 0 ? (
-                        <PartsRenderer parts={msg.parts} onRefClick={onReferenceClick} />
-                      ) : (
-                        <LegacyRenderer msg={msg} onRefClick={onReferenceClick} />
-                      )
-                    ) : (
-                      msg.content && (
-                        <div className="prose prose-invert prose-sm max-w-none">
-                          <MessageContent content={msg.content} onRefClick={onReferenceClick} />
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {streaming && streamingParts.length > 0 && (
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
-                    <PartsRenderer parts={streamingParts} onRefClick={onReferenceClick} />
-                    <div className="flex items-center gap-1.5 mt-1.5 text-zinc-400 animate-pulse">
-                      <div className="flex gap-0.5">
-                        <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0ms]" />
-                        <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:150ms]" />
-                        <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:300ms]" />
-                      </div>
-                      <span className="text-xs">处理中</span>
+          () =>
+            messages.map((msg) => (
+              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
+                    msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'
+                  }`}
+                >
+                  {msg.role === 'user' && msg.references && msg.references.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {msg.references.map((r, i) => (
+                        <ReferenceBadge key={i} fileRef={r} onClick={onReferenceClick} />
+                      ))}
                     </div>
-                  </div>
+                  )}
+
+                  {msg.role === 'assistant' ? (
+                    msg.parts && msg.parts.length > 0 ? (
+                      <PartsRenderer parts={msg.parts} onRefClick={onReferenceClick} />
+                    ) : (
+                      <LegacyRenderer msg={msg} onRefClick={onReferenceClick} />
+                    )
+                  ) : (
+                    msg.content && (
+                      <div className="prose prose-invert prose-sm max-w-none">
+                        <MessageContent content={msg.content} onRefClick={onReferenceClick} />
+                      </div>
+                    )
+                  )}
                 </div>
-              )}
-              {streaming && streamingParts.length === 0 && (
-                <div className="flex justify-start">
-                  <div className="px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
-                    <span className="animate-pulse">思考中...</span>
-                  </div>
+              </div>
+            )),
+          [messages, onReferenceClick],
+        )}
+
+        {streaming && streamingParts.length > 0 && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
+              <PartsRenderer parts={streamingParts} onRefClick={onReferenceClick} />
+              <div className="flex items-center gap-1.5 mt-1.5 text-zinc-400 animate-pulse">
+                <div className="flex gap-0.5">
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:300ms]" />
                 </div>
-              )}
-            </>
-          ),
-          [messages, streaming, streamingParts, onReferenceClick],
+                <span className="text-xs">处理中</span>
+              </div>
+            </div>
+          </div>
+        )}
+        {streaming && streamingParts.length === 0 && (
+          <div className="flex justify-start">
+            <div className="px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
+              <span className="animate-pulse">思考中...</span>
+            </div>
+          </div>
         )}
         <div ref={bottomRef} />
       </div>

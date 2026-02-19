@@ -2,12 +2,12 @@ import type { Editor } from '@tiptap/react';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { FileRef } from '../api/client';
 
-const REF_REGEX = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g;
+export const REF_PATTERN = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g.source;
 
 /** Extract FileRef[] from text containing [file:start:end] patterns */
 export function extractReferencesFromText(text: string): FileRef[] {
   const refs: FileRef[] = [];
-  const re = new RegExp(REF_REGEX.source, 'g');
+  const re = new RegExp(REF_PATTERN, 'g');
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     refs.push({

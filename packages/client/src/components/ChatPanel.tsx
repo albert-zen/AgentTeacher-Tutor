@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import type { FileRef, MessagePart, CopySource } from '../api/client';
 import { ReferenceChip } from '../extensions/referenceChip';
-import { serializeEditorContent, extractReferencesFromText } from '../utils/serializeEditor';
+import { serializeEditorContent, extractReferencesFromText, REF_PATTERN } from '../utils/serializeEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 
 interface Message {
@@ -32,12 +32,10 @@ export interface ChatPanelHandle {
   insertText: (text: string) => void;
 }
 
-const REF_REGEX = /\[([^[\]\s:]+\.\w+)(?::(\d+):(\d+))?\]/g;
-
 function MessageContent({ content, onRefClick }: { content: string; onRefClick?: Props['onReferenceClick'] }) {
   const parts: (string | { file: string; start?: number; end?: number; raw: string })[] = [];
   let last = 0;
-  const regex = new RegExp(REF_REGEX.source, 'g');
+  const regex = new RegExp(REF_PATTERN, 'g');
   let match;
   while ((match = regex.exec(content)) !== null) {
     if (match.index > last) parts.push(content.slice(last, match.index));
@@ -248,7 +246,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         editorRef.current?.commands.focus();
       },
       insertText(text: string) {
-        editorRef.current?.commands.insertContent(text);
+        const html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+        editorRef.current?.commands.insertContent(html);
         editorRef.current?.commands.focus();
       },
     }),

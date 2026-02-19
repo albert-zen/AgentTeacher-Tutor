@@ -9,9 +9,13 @@ function ReferenceChipView({ node, deleteNode }: NodeViewProps) {
     endLine: number;
     preview: string;
   };
+  const preview = (node.attrs as { preview: string }).preview;
   return (
     <NodeViewWrapper as="span" className="inline">
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/20 border border-blue-700/50 rounded text-blue-300 text-xs align-baseline mx-0.5 whitespace-nowrap">
+      <span
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/20 border border-blue-700/50 rounded text-blue-300 text-xs align-baseline mx-0.5 whitespace-nowrap"
+        title={preview || undefined}
+      >
         <span>
           {file} ({startLine}-{endLine})
         </span>

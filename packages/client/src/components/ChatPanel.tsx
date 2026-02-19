@@ -115,18 +115,6 @@ function ToolEventCard({ part }: { part: MessagePart & { type: 'tool-call' | 'to
   );
 }
 
-function ReferenceBadge({ fileRef, onClick }: { fileRef: FileRef; onClick?: Props['onReferenceClick'] }) {
-  const label = fileRef.startLine ? `${fileRef.file}:${fileRef.startLine}:${fileRef.endLine}` : fileRef.file;
-  return (
-    <button
-      onClick={() => onClick?.(fileRef.file, fileRef.startLine, fileRef.endLine)}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-900/40 border border-blue-700/50 rounded text-blue-400 text-xs hover:bg-blue-800/40"
-    >
-      [{label}]
-    </button>
-  );
-}
-
 function PartsRenderer({ parts, onRefClick }: { parts: MessagePart[]; onRefClick?: Props['onReferenceClick'] }) {
   return (
     <>
@@ -297,14 +285,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
                     msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'
                   }`}
                 >
-                  {msg.role === 'user' && msg.references && msg.references.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-1.5">
-                      {msg.references.map((r, i) => (
-                        <ReferenceBadge key={i} fileRef={r} onClick={onReferenceClick} />
-                      ))}
-                    </div>
-                  )}
-
                   {msg.role === 'assistant' ? (
                     msg.parts && msg.parts.length > 0 ? (
                       <PartsRenderer parts={msg.parts} onRefClick={onReferenceClick} />

@@ -25,16 +25,23 @@ npm run lint
 
 If any gate fails, fix and re-run ALL gates from the start.
 
-## Phase 3: Self-Review
+## Phase 3: Review
 
-Once all gates pass, review your own changes:
+Once all gates pass, launch a **code-reviewer subagent** (Task tool with `subagent_type="code-reviewer"`) to review changes:
+
+> Review the changes on the current feature branch.
+>
+> Instructions:
+> 1. Read `CLAUDE.md` to understand project conventions
+> 2. Run `git diff main --stat` and `git diff main` to see all changes
+> 3. Review each changed file for **functionality** (logic errors, unhandled edge cases), **readability** (clear names, no unnecessary complexity), **project conventions** (strict TS, full-stack type safety, error handling, test coverage), **style** (consistent patterns, no over-engineering, no debug leftovers)
+> 4. If issues found: fix, commit, re-run ALL quality gates. Maximum 2 fix rounds.
+> 5. Report back: review verdict (PASS / FAIL with remaining issues), fix rounds used
+
+**Fallback**: If you are a subagent (cannot spawn sub-subagents), perform self-review instead:
 
 1. Run `git diff main --stat` and `git diff main`
-2. Check each changed file against:
-   - **Correctness**: edge cases, no debug code, correct imports/types
-   - **Consistency**: follows existing patterns, API changes reflected on both sides
-   - **Safety**: no secrets, paths sanitized, errors handled
-   - **Completeness**: all acceptance criteria met, no half-done features
+2. Check each changed file against the same criteria above
 3. If issues found: fix, commit, go back to Phase 2
 
 ## Phase 4: Report
@@ -43,6 +50,6 @@ Present a summary: what was implemented, files changed, self-review result, fix 
 
 ## Rules
 
-- Maximum 2 fix rounds after self-review. If still not clean, report remaining issues to user.
+- Maximum 2 fix rounds after review. If still not clean, report remaining issues to user.
 - Never skip gates.
 - Use `node ./node_modules/typescript/bin/tsc` (not `npx tsc`) on Windows.

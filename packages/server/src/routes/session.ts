@@ -8,8 +8,8 @@ import { FileService } from '../services/fileService.js';
 import { parseReferences } from '../services/referenceParser.js';
 import { parseMilestones } from '../services/milestonesParser.js';
 import { createLLMClient, streamTeacherResponse, isLLMConfigured, loadLLMConfig } from '../services/llm.js';
-import { assembleContext } from '../services/contextCompiler.js';
-import { generateText, type ModelMessage } from 'ai';
+import { assembleContext, compileContext } from '../services/contextCompiler.js';
+import { generateText } from 'ai';
 
 async function generateTitle(dataDir: string, store: Store, sessionId: string, userMessage: string) {
   const config = loadLLMConfig(dataDir);
@@ -90,40 +90,8 @@ export function createSessionRouter(store: Store, dataDir: string) {
     const sessionDir = join(dataDir, session.id);
     const fileService = new FileService(sessionDir);
 
-    // Build user message content with resolved references
-    let userContent = message;
+    // Build refs for persistence (parse inline refs + explicit body refs)
     const refs = parseReferences(message);
-    if (refs.length > 0) {
-      const resolvedParts: string[] = [];
-      for (const ref of refs) {
-        try {
-          const result = fileService.readFile({
-            path: ref.file,
-            startLine: ref.startLine,
-            endLine: ref.endLine,
-          });
-          resolvedParts.push(
-            `--- Referenced: ${ref.file}${ref.startLine ? `:${ref.startLine}:${ref.endLine}` : ''} ---\n${result.content}\n---`,
-          );
-        } catch {
-          // File not found, skip
-        }
-      }
-      if (resolvedParts.length > 0) {
-        userContent = `${message}\n\n${resolvedParts.join('\n\n')}`;
-      }
-    }
-
-    // Also resolve explicit references from body
-    if (references && Array.isArray(references)) {
-      for (const ref of references) {
-        if (ref.content) {
-          userContent += `\n\n--- Referenced: ${ref.filePath ?? 'selection'} ---\n${ref.content}\n---`;
-        }
-      }
-    }
-
-    // Merge parsed inline refs + explicit body refs
     const allRefs: FileReference[] = [...refs];
     if (references && Array.isArray(references)) {
       for (const ref of references) {
@@ -135,12 +103,25 @@ export function createSessionRouter(store: Store, dataDir: string) {
       }
     }
 
-    // Save user message
+    // Compile context (must run before addMessage — buildMessages uses history without current)
+    const explicitRefs =
+      references && Array.isArray(references)
+        ? references
+            .filter((r: { content?: string }) => r?.content)
+            .map((r: { filePath?: string; content: string }) => ({
+              filePath: r.filePath,
+              content: r.content,
+            }))
+        : undefined;
+    const compiled = compileContext(dataDir, store, session.id, message, { explicitRefs });
+
+    // Save user message (with resolvedContent for history replay)
     const userMsg: ChatMessage = {
       id: uuid(),
       sessionId: session.id,
       role: 'user',
       content: message,
+      resolvedContent: compiled.resolvedUserContent,
       references: allRefs.length > 0 ? allRefs : undefined,
       createdAt: new Date().toISOString(),
     };
@@ -151,14 +132,7 @@ export function createSessionRouter(store: Store, dataDir: string) {
       generateTitle(dataDir, store, session.id, message).catch(() => {});
     }
 
-    // Build conversation history for LLM
-    const history = store.getMessages(session.id);
-    const llmMessages: ModelMessage[] = history.slice(0, -1).map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
-    // Last message is the current user message with resolved references
-    llmMessages.push({ role: 'user', content: userContent });
+    const llmMessages = compiled.messages;
 
     // SSE streaming response
     res.setHeader('Content-Type', 'text/event-stream');
@@ -178,12 +152,7 @@ export function createSessionRouter(store: Store, dataDir: string) {
 
     try {
       const model = createLLMClient(currentConfig);
-      const context = assembleContext(dataDir, session.id);
-      let fullSystemPrompt = context.systemPrompt;
-      if (context.selectedProfileContent) {
-        fullSystemPrompt += `\n\n## 学生 Profile\n${context.selectedProfileContent}`;
-      }
-      const result = await streamTeacherResponse(model, fileService, llmMessages, fullSystemPrompt);
+      const result = await streamTeacherResponse(model, fileService, llmMessages, compiled.system);
 
       let fullText = '';
       const toolEvents: ToolEvent[] = [];

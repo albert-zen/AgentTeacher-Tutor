@@ -421,4 +421,19 @@ describe('compileContext integration', () => {
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]).toEqual({ role: 'user', content: 'plain question' });
   });
+
+  it('merges explicit refs when provided', () => {
+    const store = new Store(tempDir);
+    const sessionId = 'explicit-sess';
+    store.createSession({ id: sessionId, concept: 'explicit', createdAt: new Date().toISOString() });
+
+    const result = compileContext(tempDir, store, sessionId, 'see this', {
+      explicitRefs: [{ filePath: 'snippet.ts', content: 'const x = 1;' }],
+    });
+
+    expect(result.resolvedUserContent).toContain('see this');
+    expect(result.resolvedUserContent).toContain('<selection');
+    expect(result.resolvedUserContent).toContain('snippet.ts');
+    expect(result.resolvedUserContent).toContain('const x = 1;');
+  });
 });

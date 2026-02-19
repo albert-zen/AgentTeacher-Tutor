@@ -129,7 +129,9 @@ describe('Reference resolution', () => {
     const lastMsg = llmMessages[llmMessages.length - 1];
     expect(lastMsg.content).toContain('line1');
     expect(lastMsg.content).toContain('line2');
-    expect(lastMsg.content).toContain('Referenced: notes.md:1:2');
+    expect(lastMsg.content).toContain('<selection');
+    expect(lastMsg.content).toContain('notes.md');
+    expect(lastMsg.content).toContain('lines="1-2"');
   });
 
   // E2
@@ -149,7 +151,8 @@ describe('Reference resolution', () => {
     const llmMessages = call[2] as Array<{ role: string; content: string }>;
     const lastMsg = llmMessages[llmMessages.length - 1];
     expect(lastMsg.content).toContain('const x = 1;');
-    expect(lastMsg.content).toContain('Referenced: snippet.ts');
+    expect(lastMsg.content).toContain('<selection');
+    expect(lastMsg.content).toContain('snippet.ts');
   });
 
   // E3
@@ -170,9 +173,10 @@ describe('Reference resolution', () => {
     const call = mockStreamTeacher.mock.calls[0];
     const llmMessages = call[2] as Array<{ role: string; content: string }>;
     const lastMsg = llmMessages[llmMessages.length - 1];
-    expect(lastMsg.content).toContain('Referenced: guide.md:1:1');
+    expect(lastMsg.content).toContain('<selection');
     expect(lastMsg.content).toContain('alpha');
-    expect(lastMsg.content).toContain('Referenced: extra.md');
+    expect(lastMsg.content).toContain('guide.md');
+    expect(lastMsg.content).toContain('extra.md');
     expect(lastMsg.content).toContain('bonus');
   });
 
@@ -187,7 +191,7 @@ describe('Reference resolution', () => {
     const call = mockStreamTeacher.mock.calls[0];
     const llmMessages = call[2] as Array<{ role: string; content: string }>;
     const lastMsg = llmMessages[llmMessages.length - 1];
-    expect(lastMsg.content).not.toContain('Referenced:');
+    expect(lastMsg.content).not.toContain('<selection');
   });
 });
 

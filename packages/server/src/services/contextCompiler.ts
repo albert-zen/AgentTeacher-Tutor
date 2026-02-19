@@ -209,11 +209,33 @@ export function buildMessages(store: Store, sessionId: string, resolvedUserConte
 
 // ─── Main entry point ────────────────────────────────────────────────────────
 
-export function compileContext(dataDir: string, store: Store, sessionId: string, userMessage: string): CompileResult {
+export interface ExplicitRef {
+  filePath?: string;
+  file?: string;
+  content: string;
+}
+
+export function compileContext(
+  dataDir: string,
+  store: Store,
+  sessionId: string,
+  userMessage: string,
+  options?: { explicitRefs?: ExplicitRef[] },
+): CompileResult {
   const { systemPrompt, sessionPrompt } = resolvePromptsSeparately(dataDir, sessionId);
   const profileContent = selectProfileContent(dataDir, sessionId);
   const sessionDir = join(dataDir, sessionId);
-  const resolvedUserContent = resolveReferences(sessionDir, userMessage);
+  let resolvedUserContent = resolveReferences(sessionDir, userMessage);
+
+  if (options?.explicitRefs?.length) {
+    const parts = options.explicitRefs
+      .filter((r) => r.content)
+      .map((r) => `<selection path="${r.file ?? r.filePath ?? 'selection'}">\n${r.content}\n</selection>`);
+    if (parts.length > 0) {
+      resolvedUserContent += '\n\n' + parts.join('\n\n');
+    }
+  }
+
   const system = formatSystemMessage(systemPrompt, sessionPrompt, profileContent);
   const messages = buildMessages(store, sessionId, resolvedUserContent);
   return { system, messages, resolvedUserContent };

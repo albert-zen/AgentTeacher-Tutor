@@ -42,46 +42,26 @@
 - [x] P1 客户端健壮性：`assertOk(res)` 全 19 个 fetch 调用 + streamChat 错误事件
 - [x] P1 死代码清理：teacher.ts/referenceParser.ts/milestonesParser.ts/types.ts/useTextSelection.ts
 - [x] P2 文件加载竞态：stale flag + effect 合并
+- [x] Session 切换与退出时里程碑状态隔离：`App.tsx` 在切换/退出/缺失 `milestones.md` 时即时清空 `milestonesContent`，补回归测试
+- [x] ChatPanel 对话布局改为单列左对齐：用户与助手消息统一左对齐并放宽到全宽，流式与思考态同步
+- [x] 聊天自动滚动流式期间无法上滚：`wheel/touchmove` 触发即时暂停，滚到底部恢复，补底部边界保护与行为测试
 
 ---
 
 ## Tier 1: 体验基础
 
-### Session 切换与退出时里程碑状态隔离
+### 长聊天记录 Session 打开与滚动性能优化（虚拟列表 + 分页加载）
 
-**现状：** `packages/client/src/App.tsx` 中 `milestonesContent` 只在 `files` 包含 `milestones.md` 时加载；当切换到不含 `milestones.md` 的 session，或退出 session 返回列表时，旧 session 的里程碑内容不会被主动清空，`MilestoneBar` 可能继续显示上一次内容。
+**现状：** 当前 `packages/client/src/hooks/useSession.ts` 的 `loadSession()` 通过 `api.getSession(id)` 一次性拉取完整 `messages` 并 `setMessages(data.messages)`；`packages/server/src/routes/session.ts` 的 `GET /:id` 也直接返回 `store.getMessages(session.id)` 全量消息。聊天渲染侧 `packages/client/src/components/ChatPanel.tsx` 对 `messages` 进行全量 `map` 渲染，且每条消息都会走 `MessageContent`/`MarkdownRenderer` 解析（`packages/client/src/components/MarkdownRenderer.tsx` 包含较重的 Markdown + 代码高亮）。当 session 历史很长时，会出现打开慢、首屏渲染卡顿、滚动掉帧。
 
-**目标：** 退出或切换 session 后，里程碑栏只反映当前 session 数据；若当前 session 没有 `milestones.md`，里程碑栏应立即清空并隐藏，不出现跨 session 残留。
-
-**工程要点：**
-- 在 `packages/client/src/App.tsx` 的 `clearSession` 触发路径中同步清空 `milestonesContent`，确保退出 session 即刻归零。
-- 在 `packages/client/src/App.tsx` 的里程碑加载 effect 中增加缺失分支：当 `!files.includes('milestones.md')` 时执行 `setMilestonesContent('')`。
-- 在 session 切换流程（`handleLoadSession`）增加切换瞬间清空，避免异步读取返回前短暂显示旧里程碑。
-- 为客户端补回归测试（`packages/client/__tests__`）：从“有 milestones.md 的 session”切到“无 milestones.md 的 session”，以及退出 session 场景，断言里程碑栏不残留。
-
-### ChatPanel 对话布局改为单列左对齐
-
-**现状：** `packages/client/src/components/ChatPanel.tsx` 第 290 行使用 `justify-end` / `justify-start` 将用户消息右对齐、助手消息左对齐，经典双侧气泡布局。两者均限制 `max-w-[85%]`（第 292 行），导致每条消息实际可用宽度仅为面板的 85%。对于包含代码块、表格等宽内容的助手回复，水平空间浪费明显；聊天面板本身已是三栏布局中最窄的一栏，双侧布局进一步压缩可用空间。
-
-**目标：** 所有消息统一左对齐排列（类似 ChatGPT / Claude 的对话布局），通过背景色或角色标签区分发言者。助手消息可占满面板宽度，最大化内容显示空间。
+**目标：** 打开超长聊天历史 session 时仍保持可接受性能：首屏快速可交互、滚动稳定，避免一次性加载与渲染全部历史。实现“先展示最近消息，向上滚动按需加载更早消息”的常见聊天产品体验。
 
 **工程要点：**
-- `ChatPanel.tsx` 第 290 行：去掉 `justify-end`/`justify-start` 条件切换，统一左对齐
-- 去掉或放宽 `max-w-[85%]` 限制——助手消息用全宽，用户消息可保留 `max-w-[85%]` 或也放宽
-- 用户消息视觉区分：现有 `bg-blue-600` 背景色保留，可选加角色标签（"你" / "Teacher"）或左侧色条
-- 流式消息（第 322-334 行）和思考中状态（第 336-342 行）同步调整布局
-- `useMemo` 依赖不变，无性能影响
-
-### 聊天自动滚动流式期间无法上滚
-
-**现状：** `packages/client/src/components/ChatPanel.tsx` 第 218-222 行，`useEffect` 依赖 `[messages, streamingParts]`，每次变化调用 `scrollIntoView({ behavior: 'smooth' })`。流式输出时 `useSession.ts:59` 每个 `text-delta` 都 `setStreamingParts([...parts])`（每 50-100ms），高频触发自动滚动。第 211-216 行 `handleScroll` 用位置判断 `isNearBottom`（阈值 80px），用户上滚时只有 50ms 窗口逃出 80px 范围，且 smooth 动画还在主动拉回，导致流式输出期间几乎无法上滚查看历史内容。
-
-**目标：** 流式输出期间，用户一旦主动滚动（鼠标滚轮 / 触摸滑动）即立刻暂停自动滚动，不再被拽回底部。滚到底部时自动恢复。
-
-**工程要点：**
-- 改用事件检测替代位置检测：监听 `wheel` / `touchmove` 事件设 `isNearBottomRef = false`，用户一滚就暂停
-- 恢复条件：`scroll` 事件中检测到达底部时重新设为 `true`（保留现有位置判断逻辑用于恢复）
-- 流式期间用 `behavior: 'instant'` 替代 `smooth`，避免动画中间态干扰
+- 服务端新增消息分页接口（推荐游标分页）：如 `GET /api/session/:id/messages?before=<cursor>&limit=<n>`，返回 `{ items, nextCursor, hasMore }`；`GET /api/session/:id` 仅返回 session 元信息或最近一页消息。
+- 存储层在 `packages/server/src/db/index.ts` 增加分页读取能力（避免每次全量读取后再在路由层切片），并与现有 `messages.json` 格式兼容。
+- 客户端在 `packages/client/src/api/client.ts` / `packages/client/src/hooks/useSession.ts` 增加分页消息加载与“向上加载更多”状态管理，首屏仅拉最近 `N` 条。
+- `packages/client/src/components/ChatPanel.tsx` 引入虚拟列表（如 `@tanstack/react-virtual`）仅渲染可视区消息，保留现有自动滚动逻辑并处理向上分页加载时的滚动锚点。
+- 对重渲染路径做最小优化：`MessageContent`/`MarkdownRenderer` 增加 memo 化，减少无关更新时的 Markdown 重解析；补充长列表场景回归测试（初始加载条数、向上加载、滚动位置稳定）。
 
 ---
 
@@ -325,11 +305,9 @@
   ✅ P0-P2 bug 修复（安全/健壮性/死代码/竞态）
 
 待完成:
-  Session 切换与退出时里程碑状态隔离（独立）
-
-  ChatPanel 对话布局改为单列左对齐（独立）
-
-  聊天自动滚动流式期间无法上滚（独立）
+  长聊天记录 Session 打开与滚动性能优化（Tier 1）
+    ├→ 依赖: 服务端消息分页接口
+    └→ 依赖: 客户端消息虚拟列表
 
   上下文编排器 Phase 2（可见的上下文面板）
     └→ 依赖: ✅ Context Compiler

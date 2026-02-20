@@ -155,7 +155,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
   { messages, streaming, streamingParts, copySource, onSend, onStop, onReferenceClick, failedMessage, onRetry },
   ref,
 ) {
-  const bottomRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -261,11 +260,31 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
   }, []);
 
   useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+
+    const threshold = 80;
+    const isNearBottom = () => el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
+
+    const markManualScroll = () => {
+      if (isNearBottom()) return;
+      isNearBottomRef.current = false;
+    };
+
+    el.addEventListener('wheel', markManualScroll, { passive: true });
+    el.addEventListener('touchmove', markManualScroll, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', markManualScroll);
+      el.removeEventListener('touchmove', markManualScroll);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isNearBottomRef.current) {
       const el = messagesContainerRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     }
-  }, [messages, streamingParts]);
+  }, [messages, streamingParts, streaming]);
 
   const isEmpty = !editor || !serializeEditorContent(editor);
 
@@ -279,9 +298,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         {useMemo(
           () =>
             messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={msg.id} className="flex">
                 <div
-                  className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${
                     msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'
                   }`}
                 >
@@ -305,8 +324,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         )}
 
         {streaming && streamingParts.length > 0 && (
-          <div className="flex justify-start">
-            <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
+          <div className="flex">
+            <div className="w-full px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
               <PartsRenderer parts={streamingParts} onRefClick={onReferenceClick} />
               <div className="flex items-center gap-1.5 mt-1.5 text-zinc-400 animate-pulse">
                 <div className="flex gap-0.5">
@@ -320,13 +339,12 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
           </div>
         )}
         {streaming && streamingParts.length === 0 && (
-          <div className="flex justify-start">
-            <div className="px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
+          <div className="flex">
+            <div className="w-full px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
               <span className="animate-pulse">思考中...</span>
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       {failedMessage && (

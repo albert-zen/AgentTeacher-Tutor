@@ -108,7 +108,10 @@ export default function App() {
   }, [files, activeFile]);
 
   useEffect(() => {
-    if (!session || !files.includes('milestones.md')) return;
+    if (!session || !files.includes('milestones.md')) {
+      setMilestonesContent('');
+      return;
+    }
     let stale = false;
     api
       .readFile(session.id, 'milestones.md')
@@ -169,8 +172,10 @@ export default function App() {
   }, [session]);
 
   const handleLoadSession = async (id: string) => {
-    await loadSession(id);
+    setMilestonesContent('');
+    setFileContent('');
     setActiveFile(null);
+    await loadSession(id);
   };
 
   if (!session) {
@@ -183,6 +188,8 @@ export default function App() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
+              setMilestonesContent('');
+              setFileContent('');
               clearSession();
               setActiveFile(null);
             }}

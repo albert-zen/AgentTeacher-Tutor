@@ -14,7 +14,7 @@ Teacher Agent Notebook — AI 教学工具。Teacher Agent 生成结构化学习
 | Server | Express 5 · Vercel AI SDK v6 · @ai-sdk/openai |
 | LLM | OpenAI-compatible API (DashScope / OpenAI / etc.)，运行时可切换 |
 | Storage | JSON files + Markdown files (no database) |
-| Testing | vitest · supertest · jsdom · @testing-library/react · 150 tests |
+| Testing | vitest · supertest · jsdom · @testing-library/react · 196 tests |
 | Monorepo | npm workspaces · TypeScript strict · ES2022 |
 
 ## System Overview
@@ -28,9 +28,10 @@ graph TB
     end
 
     subgraph Server ["Server (Express)"]
-        SR[routes/session.ts<br/>Session CRUD + SSE Chat]
+        SR[routes/session.ts<br/>Session CRUD + message pagination + context preview]
+        CR[routes/chat.ts<br/>SSE chat streaming]
         FR[routes/files.ts<br/>File CRUD + Settings]
-        CA[services/contextAssembler.ts<br/>Context assembly]
+        CC[services/contextCompiler.ts<br/>Context preview + compile pipeline]
         LLM[services/llm.ts<br/>LLM client + tools + config]
         PP[services/profileParser.ts<br/>Profile block parsing]
         FS[services/fileService.ts<br/>Sandboxed file I/O]
@@ -47,11 +48,13 @@ graph TB
     end
 
     LP & WS --> API
-    API -- "REST + SSE" --> SR & FR
-    SR --> CA --> LLM
-    CA --> PP
-    SR & FR --> ST --> SJ
+    API -- "REST + SSE" --> SR & CR & FR
+    SR --> CC
+    CR --> CC --> LLM
+    CC --> PP
+    SR & CR & FR --> ST --> SJ
     FR --> FS
+    CR --> FS
     FS --> SD
     LLM -- "streamText + tools" --> EXT["External LLM API"]
 ```
@@ -63,16 +66,15 @@ sequenceDiagram
     participant U as User
     participant C as Client
     participant S as Server
-    participant CA as ContextAssembler
+    participant CC as ContextCompiler
     participant L as LLM
     participant F as FileService
 
     U->>C: Send message + [file:1:10] refs
     C->>S: POST /session/:id/chat
-    S->>F: Resolve file references
-    S->>CA: assembleContext(dataDir, sessionId)
-    CA-->>S: systemPrompt + profileBlocks
-    S->>S: Build message history
+    S->>CC: compileContext(dataDir, store, sessionId, message)
+    CC->>F: Resolve file references
+    CC-->>S: system + messages + resolvedUserContent
     S->>L: streamText(system + messages + tools)
 
     loop Tool calls (max 10 steps)
@@ -115,7 +117,7 @@ erDiagram
     }
 ```
 
-**Session 保持薄** — `{ id, concept, createdAt }` 三个字段，永不膨胀。所有丰富度来自 session 目录下的文件：
+**Session 保持薄** — `{ id, concept, createdAt }` 三个字段，永不膨胀。消息历史分页读取，但底层仍保存在 `messages.json` 中；其余丰富度来自 session 目录下的文件：
 
 ```
 data/
@@ -152,7 +154,8 @@ data/
 |--------|------|---------|
 | GET | `/api/session` | List sessions |
 | POST | `/api/session` | Create session（自动复制 draft → session-prompt） |
-| GET | `/api/session/:id` | Get session + messages |
+| GET | `/api/session/:id` | Get session + recent message page |
+| GET | `/api/session/:id/messages` | Load older chat history by cursor |
 | POST | `/api/session/:id/chat` | SSE streaming chat |
 | GET | `/api/session/:id/milestones` | Milestone progress |
 | GET | `/api/session/:id/context-preview` | Preview assembled context |
@@ -172,28 +175,31 @@ data/
 
 ## Context Assembly (当前状态)
 
-`contextAssembler.ts` 目前覆盖 DESIGN.md 5 阶段流水线的 Stage 1-2。Stage 3-5 仍在 `session.ts` 路由内联。
+`contextCompiler.ts` 现在同时承担两类职责：
+
+- `assembleContext()`：为 `/context-preview` 提供轻量上下文预览
+- `compileContext()`：完成聊天请求所需的 5 阶段编排流水线
 
 ```mermaid
 graph LR
-    subgraph Assembler ["contextAssembler.ts (Stage 1-2)"]
+    subgraph Preview ["assembleContext()"]
+        P1["Resolve Sources<br/>system prompt + profile blocks"]
+        P2["Select Blocks<br/>context-config 过滤"]
+    end
+
+    subgraph Compile ["compileContext()"]
         S1["1. Resolve Sources<br/>global + session prompt"]
         S2["2. Select Blocks<br/>profile 分块 + 过滤"]
-    end
-
-    subgraph Inline ["session.ts 路由内联 (Stage 3-5)"]
         S3["3. Merge Refs<br/>解析 file:s:e 引用"]
-        S4["4. Format<br/>构建 ModelMessage[]"]
-        S5["5. Emit<br/>调用 streamText"]
+        S4["4. Format<br/>构建 system XML"]
+        S5["5. Build Messages<br/>拼接历史和当前用户消息"]
     end
 
+    P1 --> P2
     S1 --> S2 --> S3 --> S4 --> S5
-
-    style Assembler fill:#10b981,color:#fff
-    style Inline fill:#a1a1aa,color:#fff
 ```
 
-**下一步**：将 Stage 3-5 从路由中提取到 assembler/compiler，使路由变成薄胶水层。详见 DESIGN.md。
+当前状态下，聊天上下文主流程已经从路由中提取到 `compileContext()`；后续仍可继续收敛 preview/compile 之间的重复逻辑。
 
 ---
 
@@ -205,11 +211,11 @@ Phase 1 — 基础编排 ✅
   ✅ Session prompt draft 模板 → 新 session 自动复制
   ✅ LLM 运行时配置切换
   ✅ Profile 分块解析 + 选择性注入
-  ✅ Context Assembler 核心 (Stage 1-2)
+  ✅ Context Compiler 完整聊天流水线 (Stage 1-5)
   ✅ Session 标题自动摘要
+  ✅ 长聊天历史分页 + 虚拟列表
 
 Phase 2 — 可见的上下文 (next)
-  → Context Assembler 完整化 (Stage 3-5 提取)
   → 上下文预览面板 UI（模型看到了什么）
   → Profile 块选择接入 context-config
   → 跨 session 文件引用

@@ -1,44 +1,64 @@
 # Teacher Agent Notebook
 
-Teacher Agent Notebook 是一个面向学习场景的 AI 笔记本应用。
+Teacher Agent Notebook 是一个面向学习场景的 AI 工作台。
 
-它的核心体验不是“单纯聊天”，而是让一个 `Teacher Agent` 一边生成结构化学习材料，一边基于这些材料持续辅导学生。整个工作区围绕三栏展开：
+它不是一个“只有聊天框”的工具，而是一个让 `Teacher Agent` 一边生成学习材料、一边陪你推进学习过程的笔记本。你可以把它理解成：
 
-- 文件树：管理当前 session 下的所有学习文件
-- Markdown 编辑器：直接编辑 `guidance.md`、`ground-truth.md`、`milestones.md` 等内容
-- 聊天面板：和 Teacher 对话，引用文件片段，查看工具调用与流式回复
+- 左边是学习资料和上下文文件
+- 中间是可编辑的 Markdown 工作区
+- 右边是和 Teacher 的对话
 
-项目的长期方向是成为一个 **Context Orchestrator**:
+这个项目的核心想法很简单：
 
-- Everything is a file：上下文、提示词、聊天材料、用户 profile 都以文件形式存在
-- 人机双向编排：用户可以手动选择上下文，Agent 也可以主动读写和组织文件
-- 精确引用：聊天里可以通过 `[file:startLine:endLine]` 关联代码或材料片段
+> 学习上下文不应该藏在 prompt 里，而应该作为文件被看见、编辑、引用和复用。
 
-## What It Can Do
-- 创建学习 session，并为每个 session 维护独立文件目录
-- 让 Teacher Agent 生成和编辑 `guidance.md`、`ground-truth.md`、`milestones.md` 等材料
-- 在聊天中引用文件片段，服务端会自动解析引用并注入上下文
-- 通过 SSE 流式返回文本、工具调用和工具结果
-- 把 Agent 工具调用过程可视化展示在聊天中
-- 运行时切换 LLM 配置，无需重启服务
-- 选择性注入 profile block 和 session prompt
-- 对长聊天历史做分页加载和虚拟列表渲染，避免一次性渲染全部消息
+## 它适合做什么
+- 让 AI 帮你围绕一个主题搭建完整学习 session
+- 自动生成 `guidance.md`、`ground-truth.md`、`milestones.md` 等材料
+- 一边聊天，一边让 Agent 读写这些文件
+- 精确引用文件片段继续追问，而不是反复复制粘贴大段内容
+- 把“聊天 + 笔记 + 学习计划”放在同一个工作区里
 
-## Tech Stack
-- Client: React 19, Vite 6, Tailwind 4, TipTap, react-markdown
-- Server: Express 5, Vercel AI SDK v6, `@ai-sdk/openai`
-- Storage: JSON files + Markdown files
-- Testing: Vitest, Testing Library, Supertest, jsdom
-- Repo: npm workspaces + TypeScript strict
+## 你会怎么使用它
+一个典型流程大概是：
 
-## Quick Start
-### 1. Install
+1. 输入一个学习目标，比如“我想系统学二分查找”
+2. 创建一个 session
+3. Teacher 生成学习材料和里程碑
+4. 你在编辑器里直接改材料，或者在聊天里继续追问
+5. 需要引用材料时，直接把文件片段插入聊天
+6. 整个 session 的内容都保存在文件里，可以继续演进
+
+## 核心体验
+### 1. 三栏工作区
+- 文件树：查看这个 session 下有哪些学习文件
+- 编辑器：直接修改学习材料
+- 聊天面板：和 Teacher 对话、引用文件、查看流式输出
+
+### 2. Everything is a file
+项目里很多“上下文”都不是隐式状态，而是文件：
+
+- 学习材料是文件
+- session prompt 是文件
+- profile 是文件
+- 聊天历史也是 session 数据的一部分
+
+这让上下文更容易被检查、组织和复用。
+
+### 3. 精确引用，而不是模糊复制
+你可以在聊天中引用某个文件或某个片段，服务端会自动解析这些引用并注入上下文。这样 Teacher 回答时是“看过材料再说”，而不是纯猜测。
+
+### 4. 长聊天也能继续用
+聊天历史较长时，应用会优先加载最近消息，并按需向上加载更早历史，避免整个界面因为消息过多变得很卡。
+
+## 快速开始
+### 安装依赖
 ```bash
 npm install
 ```
 
-### 2. Configure LLM
-Create a `.env` file in the repo root:
+### 配置模型
+在仓库根目录创建 `.env`：
 
 ```bash
 LLM_BASE_URL=
@@ -46,29 +66,29 @@ LLM_API_KEY=
 LLM_MODEL=
 ```
 
-Notes:
+说明：
 
-- The server expects an OpenAI-compatible API.
-- If LLM is not configured, the app can still be used as a file-oriented notebook, but chat generation will be disabled.
+- 服务端使用 OpenAI-compatible API
+- 如果不配置模型，应用仍然可以作为文件型笔记工具运行，但不会真正生成 AI 回复
 
-### 3. Start Development
+### 启动开发环境
 ```bash
 npm run dev
 ```
 
-Defaults:
+默认端口：
 
 - Client: `http://localhost:5173`
 - Server: `http://localhost:3001`
 
-You can also run each side separately:
+也可以分别启动：
 
 ```bash
 npm run dev:server
 npm run dev:client
 ```
 
-## Useful Commands
+## 常用命令
 ```bash
 npm test
 npm run lint
@@ -76,19 +96,28 @@ node ./node_modules/typescript/bin/tsc --noEmit -p packages/server/tsconfig.json
 node ./node_modules/typescript/bin/tsc --noEmit -p packages/client/tsconfig.json
 ```
 
-## Repository Layout
+## 项目结构
+如果你只是想快速理解项目，先记住这几个地方就够了：
+
+- `packages/client/src/App.tsx`
+  整个三栏工作区的主入口
+- `packages/client/src/hooks/useSession.ts`
+  session、消息、流式响应、历史分页这些核心状态都在这里
+- `packages/client/src/components/ChatPanel.tsx`
+  聊天 UI、本地流式展示、长历史渲染优化都在这里
+- `packages/server/src/routes/session.ts`
+  session 元数据、消息分页、上下文预览相关接口
+- `packages/server/src/routes/chat.ts`
+  真正的 SSE 聊天入口
+- `packages/server/src/services/contextCompiler.ts`
+  把 prompt、profile、引用片段、聊天历史拼成模型真正看到的上下文
+
+## 数据是怎么存的
+每个 session 都有自己的目录，里面放聊天记录和学习文件。
+
+大致是这样的：
+
 ```text
-packages/
-  client/
-    src/
-      components/
-      hooks/
-      api/
-  server/
-    src/
-      routes/
-      services/
-      db/
 data/
   sessions.json
   {sessionId}/
@@ -100,42 +129,16 @@ data/
     context-config.json
 ```
 
-## How It Works
-### Session Model
-- A session is intentionally thin: `id`, `concept`, `createdAt`
-- All real learning state lives in files under `data/{sessionId}/`
+这意味着 session 本身很薄，真正的内容都在文件里。
 
-### Chat Flow
-1. User sends a message, optionally with file references
-2. Server resolves references and assembles context
-3. LLM runs with file tools
-4. Server streams `text-delta`, `tool-call`, `tool-result`, `done`
-5. Client updates chat and file list in real time
+## 当前项目方向
+Teacher Agent Notebook 正在从“AI 教学笔记本”进一步往 **Context Orchestrator** 方向发展：
 
-### Long History Performance
-- `GET /api/session/:id` returns session data plus only the recent page of messages
-- `GET /api/session/:id/messages` supports loading older history with cursor pagination
-- Client uses upward pagination and virtualized chat rendering for large sessions
+- 更清晰地展示模型实际看到了哪些上下文
+- 让上下文选择变得更显式
+- 让聊天历史更像可编辑、可 fork 的材料
+- 为图片、多模态、联网工具等能力打基础
 
-## Important Files
-- `packages/client/src/App.tsx`: main workspace shell
-- `packages/client/src/hooks/useSession.ts`: chat/session state and SSE handling
-- `packages/client/src/components/ChatPanel.tsx`: chat UI, streaming UI, virtualized history
-- `packages/server/src/routes/session.ts`: session routes and message pagination
-- `packages/server/src/routes/chat.ts`: streaming chat route
-- `packages/server/src/services/llm.ts`: LLM client and tool definitions
-- `packages/server/src/db/index.ts`: JSON-file persistence
-
-## Current Product Direction
-This app is evolving from “AI tutoring notebook” toward a general-purpose **context orchestration workspace**:
-
-- richer context preview
-- more explicit context selection
-- chat history as editable/forkable files
-- multimodal input and tool-augmented workflows
-
-## Development Notes
-- Keep session objects thin; prefer adding capability via files
-- Maintain full-stack type safety when changing API contracts
-- Prefer test-first changes for new behavior
-- Run tests, both package typechecks, and lint before merging into `main`
+## 想继续了解
+- 更偏实现细节的说明：`ARCHITECTURE.md`
+- 更偏内部开发约定的说明：`CLAUDE.md`

@@ -52,14 +52,89 @@ describe('Session lifecycle routes', () => {
   });
 
   // E3
-  it('GET /api/session/:id returns { session, messages } for a valid id', async () => {
+  it('GET /api/session/:id returns the session with only the most recent message page', async () => {
     const created = await request(app).post('/api/session').send({ concept: 'sorting' });
     const id = created.body.id;
+    for (let i = 1; i <= 4; i += 1) {
+      store.addMessage({
+        id: `msg-${i}`,
+        sessionId: id,
+        role: i % 2 === 0 ? 'assistant' : 'user',
+        content: `message ${i}`,
+        createdAt: `2025-01-01T00:00:0${i}.000Z`,
+      });
+    }
 
     const res = await request(app).get(`/api/session/${id}`);
     expect(res.status).toBe(200);
     expect(res.body.session).toEqual(created.body);
-    expect(res.body.messages).toEqual([]);
+    expect(res.body.messages).toEqual([
+      expect.objectContaining({ id: 'msg-1', content: 'message 1' }),
+      expect.objectContaining({ id: 'msg-2', content: 'message 2' }),
+      expect.objectContaining({ id: 'msg-3', content: 'message 3' }),
+      expect.objectContaining({ id: 'msg-4', content: 'message 4' }),
+    ]);
+    expect(res.body.nextCursor).toBeNull();
+    expect(res.body.hasMore).toBe(false);
+  });
+
+  it('GET /api/session/:id applies recent-page pagination when limit is provided', async () => {
+    const created = await request(app).post('/api/session').send({ concept: 'sorting' });
+    const id = created.body.id;
+    for (let i = 1; i <= 5; i += 1) {
+      store.addMessage({
+        id: `msg-${i}`,
+        sessionId: id,
+        role: i % 2 === 0 ? 'assistant' : 'user',
+        content: `message ${i}`,
+        createdAt: `2025-01-01T00:00:0${i}.000Z`,
+      });
+    }
+
+    const res = await request(app).get(`/api/session/${id}?limit=2`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.messages).toEqual([
+      expect.objectContaining({ id: 'msg-4', content: 'message 4' }),
+      expect.objectContaining({ id: 'msg-5', content: 'message 5' }),
+    ]);
+    expect(res.body.nextCursor).toBe('msg-4');
+    expect(res.body.hasMore).toBe(true);
+  });
+
+  it('GET /api/session/:id/messages returns an older page before the given cursor', async () => {
+    const created = await request(app).post('/api/session').send({ concept: 'sorting' });
+    const id = created.body.id;
+    for (let i = 1; i <= 5; i += 1) {
+      store.addMessage({
+        id: `msg-${i}`,
+        sessionId: id,
+        role: i % 2 === 0 ? 'assistant' : 'user',
+        content: `message ${i}`,
+        createdAt: `2025-01-01T00:00:0${i}.000Z`,
+      });
+    }
+
+    const res = await request(app).get(`/api/session/${id}/messages?before=msg-4&limit=2`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      items: [
+        expect.objectContaining({ id: 'msg-2', content: 'message 2' }),
+        expect.objectContaining({ id: 'msg-3', content: 'message 3' }),
+      ],
+      nextCursor: 'msg-2',
+      hasMore: true,
+    });
+  });
+
+  it('GET /api/session/:id/messages returns 400 when before cursor is invalid', async () => {
+    const created = await request(app).post('/api/session').send({ concept: 'sorting' });
+
+    const res = await request(app).get(`/api/session/${created.body.id}/messages?before=missing`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid message cursor');
   });
 
   // X1

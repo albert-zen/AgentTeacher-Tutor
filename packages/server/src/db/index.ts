@@ -2,6 +2,12 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import type { Session, ChatMessage } from '../types.js';
 
+export interface MessagePage {
+  items: ChatMessage[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 /**
  * Simple JSON-file-based storage for sessions and messages.
  * Each session has its own directory under dataDir.
@@ -55,6 +61,31 @@ export class Store {
     const file = this.messagesFile(sessionId);
     if (!existsSync(file)) return [];
     return JSON.parse(readFileSync(file, 'utf-8'));
+  }
+
+  getMessagesPage(
+    sessionId: string,
+    options: {
+      beforeMessageId?: string;
+      limit?: number;
+    } = {},
+  ): MessagePage | null {
+    const messages = this.getMessages(sessionId);
+    const limit = Math.max(1, options.limit ?? 50);
+    const endExclusive = options.beforeMessageId
+      ? messages.findIndex((message) => message.id === options.beforeMessageId)
+      : messages.length;
+
+    if (options.beforeMessageId && endExclusive === -1) {
+      return null;
+    }
+
+    const start = Math.max(0, endExclusive - limit);
+    const items = messages.slice(start, endExclusive);
+    const hasMore = start > 0;
+    const nextCursor = hasMore && items.length > 0 ? items[0].id : null;
+
+    return { items, nextCursor, hasMore };
   }
 
   addMessage(message: ChatMessage): void {

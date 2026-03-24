@@ -8,6 +8,16 @@ import { FileService } from '../services/fileService.js';
 import { parseMilestones } from '../services/milestonesParser.js';
 import { assembleContext } from '../services/contextCompiler.js';
 
+const DEFAULT_MESSAGE_PAGE_SIZE = 50;
+const MAX_MESSAGE_PAGE_SIZE = 100;
+
+function parseMessageLimit(rawLimit: unknown): number | null {
+  if (rawLimit === undefined) return DEFAULT_MESSAGE_PAGE_SIZE;
+  const parsed = Number(rawLimit);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return Math.min(parsed, MAX_MESSAGE_PAGE_SIZE);
+}
+
 export function createSessionRouter(store: Store, dataDir: string) {
   const router = Router();
 
@@ -48,8 +58,44 @@ export function createSessionRouter(store: Store, dataDir: string) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-    const messages = store.getMessages(session.id);
-    res.json({ session, messages });
+
+    const limit = parseMessageLimit(req.query.limit);
+    if (limit === null) {
+      res.status(400).json({ error: 'limit must be a positive integer' });
+      return;
+    }
+
+    const page = store.getMessagesPage(session.id, { limit });
+    res.json({
+      session,
+      messages: page?.items ?? [],
+      nextCursor: page?.nextCursor ?? null,
+      hasMore: page?.hasMore ?? false,
+    });
+  });
+
+  router.get('/:id/messages', (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    const limit = parseMessageLimit(req.query.limit);
+    if (limit === null) {
+      res.status(400).json({ error: 'limit must be a positive integer' });
+      return;
+    }
+
+    const before = typeof req.query.before === 'string' ? req.query.before : undefined;
+    const page = store.getMessagesPage(session.id, { beforeMessageId: before, limit });
+
+    if (!page && before) {
+      res.status(400).json({ error: 'Invalid message cursor' });
+      return;
+    }
+
+    res.json(page ?? { items: [], nextCursor: null, hasMore: false });
   });
 
   // Context preview

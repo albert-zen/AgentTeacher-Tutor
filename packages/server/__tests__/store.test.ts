@@ -107,6 +107,50 @@ describe('Store', () => {
     expect(store.getMessages('sess-1')).toEqual([msg1, msg2]);
   });
 
+  it('getMessagesPage returns the most recent page with cursor metadata', () => {
+    const store = new Store(tempDir);
+    store.createSession(makeSession());
+
+    for (let i = 1; i <= 5; i += 1) {
+      store.addMessage(makeMessage({ id: `msg-${i}`, content: `message ${i}` }));
+    }
+
+    expect(store.getMessagesPage('sess-1', { limit: 2 })).toEqual({
+      items: [
+        expect.objectContaining({ id: 'msg-4', content: 'message 4' }),
+        expect.objectContaining({ id: 'msg-5', content: 'message 5' }),
+      ],
+      nextCursor: 'msg-4',
+      hasMore: true,
+    });
+  });
+
+  it('getMessagesPage returns older messages before a cursor', () => {
+    const store = new Store(tempDir);
+    store.createSession(makeSession());
+
+    for (let i = 1; i <= 5; i += 1) {
+      store.addMessage(makeMessage({ id: `msg-${i}`, content: `message ${i}` }));
+    }
+
+    expect(store.getMessagesPage('sess-1', { beforeMessageId: 'msg-4', limit: 2 })).toEqual({
+      items: [
+        expect.objectContaining({ id: 'msg-2', content: 'message 2' }),
+        expect.objectContaining({ id: 'msg-3', content: 'message 3' }),
+      ],
+      nextCursor: 'msg-2',
+      hasMore: true,
+    });
+  });
+
+  it('getMessagesPage returns null when beforeMessageId does not exist', () => {
+    const store = new Store(tempDir);
+    store.createSession(makeSession());
+    store.addMessage(makeMessage({ id: 'msg-1' }));
+
+    expect(store.getMessagesPage('sess-1', { beforeMessageId: 'missing', limit: 20 })).toBeNull();
+  });
+
   // X1
   it('getSessions returns [] when sessions.json does not exist', () => {
     const store = new Store(tempDir);

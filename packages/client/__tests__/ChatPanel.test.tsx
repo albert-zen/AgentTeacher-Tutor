@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, act } from '@testing-library/react';
 import ChatPanel from '../src/components/ChatPanel';
 
@@ -55,6 +55,14 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 const copySource = { current: null };
 
+function createMessages(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${index + 1}`,
+    role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
+    content: `message-${index + 1}`,
+  }));
+}
+
 function deferred() {
   let resolve!: () => void;
   let reject!: (error?: unknown) => void;
@@ -68,6 +76,15 @@ function deferred() {
 describe('ChatPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('triggers older-history loading only once while a top-scroll request is pending', async () => {
@@ -152,5 +169,70 @@ describe('ChatPanel', () => {
 
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('network down');
+  });
+
+  it('restores scroll anchor when prepending into a long virtualized history', async () => {
+    const onLoadOlder = vi.fn().mockResolvedValue(undefined);
+    const messages = createMessages(10);
+    const { container, rerender } = render(
+      <div style={{ height: 600 }}>
+        <ChatPanel
+          messages={messages}
+          streaming={false}
+          streamingParts={[]}
+          copySource={copySource}
+          onSend={vi.fn()}
+          hasMoreHistory
+          loadingOlder={false}
+          onLoadOlder={onLoadOlder}
+        />
+      </div>,
+    );
+
+    const scroller = container.querySelector('.flex-1.overflow-y-auto') as HTMLDivElement;
+    let scrollTop = 50;
+    let scrollHeight = 1200;
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(scroller, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    fireEvent.scroll(scroller);
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    scrollHeight = 1440;
+    rerender(
+      <div style={{ height: 600 }}>
+        <ChatPanel
+          messages={[
+            { id: 'older-a', role: 'assistant', content: 'older-a' },
+            { id: 'older-b', role: 'user', content: 'older-b' },
+            ...messages,
+          ]}
+          streaming={false}
+          streamingParts={[]}
+          copySource={copySource}
+          onSend={vi.fn()}
+          hasMoreHistory={false}
+          loadingOlder={false}
+          onLoadOlder={onLoadOlder}
+        />
+      </div>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(scrollTop).toBe(290);
+    expect(screen.getByText('older-a')).toBeTruthy();
   });
 });

@@ -18,7 +18,7 @@ interface Message {
   parts?: MessagePart[];
 }
 
-type ChatRow = { type: 'message'; key: string; msg: Message } | { type: 'streaming'; key: string };
+const NON_VIRTUALIZED_TAIL_COUNT = 8;
 
 interface Props {
   messages: Message[];
@@ -135,9 +135,11 @@ const ToolEventCard = memo(function ToolEventCard({
 const PartsRenderer = memo(function PartsRenderer({
   parts,
   onRefClick,
+  streaming = false,
 }: {
   parts: MessagePart[];
   onRefClick?: Props['onReferenceClick'];
+  streaming?: boolean;
 }) {
   return (
     <>
@@ -145,7 +147,11 @@ const PartsRenderer = memo(function PartsRenderer({
         if (part.type === 'text') {
           return part.content ? (
             <div key={i} className="prose prose-invert prose-sm max-w-none">
-              <MessageContent content={part.content} onRefClick={onRefClick} />
+              {streaming ? (
+                <div className="whitespace-pre-wrap break-words text-sm leading-6">{part.content}</div>
+              ) : (
+                <MessageContent content={part.content} onRefClick={onRefClick} />
+              )}
             </div>
           ) : null;
         }
@@ -221,9 +227,9 @@ const StreamingBubble = memo(function StreamingBubble({
 }) {
   if (streamingParts.length > 0) {
     return (
-      <div className="flex justify-start">
+      <div className="flex justify-start" data-streaming-bubble>
         <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
-          <PartsRenderer parts={streamingParts} onRefClick={onRefClick} />
+          <PartsRenderer parts={streamingParts} onRefClick={onRefClick} streaming />
           <div className="flex items-center gap-1.5 mt-1.5 text-zinc-400 animate-pulse">
             <div className="flex gap-0.5">
               <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0ms]" />
@@ -415,25 +421,38 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
     runLoadOlder();
   }, [hasMoreHistory, loadingOlder, onLoadOlder, runLoadOlder]);
 
-  const rows = useMemo(() => {
-    const items: ChatRow[] = messages.map((msg) => ({ type: 'message', key: msg.id, msg }));
-    if (streaming) {
-      items.push({ type: 'streaming', key: '__streaming__' });
-    }
-    return items;
-  }, [messages, streaming]);
+  const virtualizedCount = Math.max(0, messages.length - NON_VIRTUALIZED_TAIL_COUNT);
+  const rows = useMemo(() => messages.slice(0, virtualizedCount), [messages, virtualizedCount]);
+  const tailMessages = useMemo(() => messages.slice(virtualizedCount), [messages, virtualizedCount]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => messagesContainerRef.current,
+    getItemKey: (index) => rows[index]?.id ?? `message-${index}`,
     estimateSize: () => 120,
     overscan: 8,
   });
 
+  const rowVirtualizerRef = useRef(rowVirtualizer);
+  rowVirtualizerRef.current = rowVirtualizer;
+
   useEffect(() => {
-    rowVirtualizer.measure();
-  }, [rowVirtualizer, messages, streamingParts]);
+    rowVirtualizerRef.current.measure();
+  }, [rows]);
+
+  const scrollToBottomRafRef = useRef<number | null>(null);
+  const scheduleScrollToBottom = useCallback(() => {
+    if (!isNearBottomRef.current) return;
+    if (scrollToBottomRafRef.current !== null) return;
+    scrollToBottomRafRef.current = window.requestAnimationFrame(() => {
+      scrollToBottomRafRef.current = null;
+      const el = messagesContainerRef.current;
+      if (el && isNearBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const el = messagesContainerRef.current;
@@ -456,14 +475,14 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
   }, []);
 
   useEffect(() => {
-    if (isNearBottomRef.current) {
-      const frame = window.requestAnimationFrame(() => {
-        const el = messagesContainerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
-      return () => window.cancelAnimationFrame(frame);
-    }
-  }, [messages, streamingParts, streaming]);
+    scheduleScrollToBottom();
+    return () => {
+      if (scrollToBottomRafRef.current !== null) {
+        window.cancelAnimationFrame(scrollToBottomRafRef.current);
+        scrollToBottomRafRef.current = null;
+      }
+    };
+  }, [messages, streamingParts, streaming, scheduleScrollToBottom]);
 
   useEffect(() => {
     if (loadingOlder || !prependSnapshotRef.current) return;
@@ -503,21 +522,27 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
             const row = rows[virtualRow.index];
             return (
               <div
-                key={row.key}
+                key={row.id}
                 ref={rowVirtualizer.measureElement}
                 data-index={virtualRow.index}
                 className="absolute left-0 top-0 w-full pb-4"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
-                {row.type === 'message' ? (
-                  <MessageBubble msg={row.msg} onRefClick={onReferenceClick} />
-                ) : (
-                  <StreamingBubble streamingParts={streamingParts} onRefClick={onReferenceClick} />
-                )}
+                <MessageBubble msg={row} onRefClick={onReferenceClick} />
               </div>
             );
           })}
         </div>
+        {tailMessages.map((msg) => (
+          <div key={msg.id} className="w-full pb-4">
+            <MessageBubble msg={msg} onRefClick={onReferenceClick} />
+          </div>
+        ))}
+        {streaming && (
+          <div className="w-full pb-4">
+            <StreamingBubble streamingParts={streamingParts} onRefClick={onReferenceClick} />
+          </div>
+        )}
       </div>
 
       {failedMessage && (

@@ -264,6 +264,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
   },
   ref,
 ) {
+  const [isEmpty, setIsEmpty] = useState(true);
   const isNearBottomRef = useRef(true);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prependSnapshotRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
@@ -336,6 +337,26 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
 
   const handleSubmitRef = useRef(handleSubmit);
   handleSubmitRef.current = handleSubmit;
+
+  useEffect(() => {
+    if (!editor) {
+      setIsEmpty(true);
+      return;
+    }
+
+    const syncEmptyState = () => {
+      setIsEmpty(!serializeEditorContent(editor));
+    };
+
+    syncEmptyState();
+
+    if (typeof editor.on === 'function' && typeof editor.off === 'function') {
+      editor.on('update', syncEmptyState);
+      return () => {
+        editor.off('update', syncEmptyState);
+      };
+    }
+  }, [editor]);
 
   useImperativeHandle(
     ref,
@@ -415,6 +436,26 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
   }, [rowVirtualizer, messages, streamingParts]);
 
   useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+
+    const threshold = 80;
+    const isNearBottom = () => el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
+
+    const markManualScroll = () => {
+      if (isNearBottom()) return;
+      isNearBottomRef.current = false;
+    };
+
+    el.addEventListener('wheel', markManualScroll, { passive: true });
+    el.addEventListener('touchmove', markManualScroll, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', markManualScroll);
+      el.removeEventListener('touchmove', markManualScroll);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isNearBottomRef.current) {
       const frame = window.requestAnimationFrame(() => {
         const el = messagesContainerRef.current;
@@ -436,8 +477,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
     });
     return () => window.cancelAnimationFrame(frame);
   }, [messages, loadingOlder]);
-
-  const isEmpty = !editor || !serializeEditorContent(editor);
 
   return (
     <div className="h-full flex flex-col bg-zinc-950">

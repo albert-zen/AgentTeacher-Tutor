@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkSourceLine from '../utils/remarkSourceLine';
@@ -33,10 +34,12 @@ const components: Components = {
   },
 };
 
-export default function MarkdownRenderer({ children }: { children: string }) {
+const MarkdownRenderer = memo(function MarkdownRenderer({ children }: { children: string }) {
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm, remarkSourceLine]} components={components}>
       {children}
     </ReactMarkdown>
   );
-}
+});
+
+export default MarkdownRenderer;

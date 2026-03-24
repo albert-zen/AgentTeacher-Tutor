@@ -6,6 +6,7 @@ import { useSession } from '../src/hooks/useSession';
 vi.mock('../src/api/client', () => ({
   createSession: vi.fn(),
   getSession: vi.fn(),
+  getSessionMessages: vi.fn(),
   getSessions: vi.fn(),
   getFiles: vi.fn(),
   streamChat: vi.fn(),
@@ -15,6 +16,7 @@ import * as api from '../src/api/client';
 
 const mockCreateSession = vi.mocked(api.createSession);
 const mockGetSession = vi.mocked(api.getSession);
+const mockGetSessionMessages = vi.mocked(api.getSessionMessages);
 const mockGetFiles = vi.mocked(api.getFiles);
 const mockStreamChat = vi.mocked(api.streamChat);
 
@@ -41,7 +43,8 @@ describe('useSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreateSession.mockResolvedValue(SESSION);
-    mockGetSession.mockResolvedValue({ session: SESSION, messages: [] });
+    mockGetSession.mockResolvedValue({ session: SESSION, messages: [], nextCursor: null, hasMore: false });
+    mockGetSessionMessages.mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
     mockGetFiles.mockResolvedValue([]);
   });
 
@@ -63,6 +66,10 @@ describe('useSession', () => {
       'send',
       'refreshFiles',
       'writingFile',
+      'hasMoreHistory',
+      'loadingOlder',
+      'historyError',
+      'loadOlderMessages',
     ]) {
       expect(keys).toContain(k);
     }
@@ -105,7 +112,7 @@ describe('useSession', () => {
       content: 'old',
       createdAt: '',
     };
-    mockGetSession.mockResolvedValue({ session: SESSION, messages: [oldMsg] });
+    mockGetSession.mockResolvedValue({ session: SESSION, messages: [oldMsg], nextCursor: null, hasMore: false });
     mockGetFiles.mockResolvedValue(['old-file.md']);
 
     const { result } = renderHook(() => useSession());
@@ -133,10 +140,10 @@ describe('useSession', () => {
 
   it('E3: loadSession fetches session data and refreshes files', async () => {
     const msgs: api.ChatMessage[] = [
-      { id: '1', sessionId: 's1', role: 'user', content: 'hello', createdAt: '' },
       { id: '2', sessionId: 's1', role: 'assistant', content: 'hi', createdAt: '' },
+      { id: '3', sessionId: 's1', role: 'user', content: 'hello', createdAt: '' },
     ];
-    mockGetSession.mockResolvedValue({ session: SESSION, messages: msgs });
+    mockGetSession.mockResolvedValue({ session: SESSION, messages: msgs, nextCursor: '2', hasMore: true });
     mockGetFiles.mockResolvedValue(['guidance.md']);
 
     const { result } = renderHook(() => useSession());
@@ -144,11 +151,75 @@ describe('useSession', () => {
       await result.current.loadSession('s1');
     });
 
-    expect(mockGetSession).toHaveBeenCalledWith('s1');
+    expect(mockGetSession).toHaveBeenCalledWith('s1', { limit: 50 });
     expect(mockGetFiles).toHaveBeenCalledWith('s1');
     expect(result.current.session).toEqual(SESSION);
     expect(result.current.messages).toEqual(msgs);
     expect(result.current.files).toEqual(['guidance.md']);
+    expect(result.current.hasMoreHistory).toBe(true);
+  });
+
+  it('E3b: loadOlderMessages prepends older history and updates pagination state', async () => {
+    const latestPage: api.ChatMessage[] = [
+      { id: '3', sessionId: 's1', role: 'user', content: 'third', createdAt: '' },
+      { id: '4', sessionId: 's1', role: 'assistant', content: 'fourth', createdAt: '' },
+    ];
+    const olderPage: api.ChatMessage[] = [
+      { id: '1', sessionId: 's1', role: 'user', content: 'first', createdAt: '' },
+      { id: '2', sessionId: 's1', role: 'assistant', content: 'second', createdAt: '' },
+    ];
+    mockGetSession.mockResolvedValue({ session: SESSION, messages: latestPage, nextCursor: '3', hasMore: true });
+    mockGetSessionMessages.mockResolvedValue({ items: olderPage, nextCursor: null, hasMore: false });
+
+    const { result } = renderHook(() => useSession());
+    await act(async () => {
+      await result.current.loadSession('s1');
+    });
+
+    await act(async () => {
+      await result.current.loadOlderMessages();
+    });
+
+    expect(mockGetSessionMessages).toHaveBeenCalledWith('s1', { before: '3', limit: 50 });
+    expect(result.current.messages.map((m) => m.id)).toEqual(['1', '2', '3', '4']);
+    expect(result.current.hasMoreHistory).toBe(false);
+  });
+
+  it('E3c: loadOlderMessages no-ops when there is no more history', async () => {
+    const { result } = renderHook(() => useSession());
+    await act(async () => {
+      await result.current.loadSession('s1');
+    });
+
+    await act(async () => {
+      await result.current.loadOlderMessages();
+    });
+
+    expect(mockGetSessionMessages).not.toHaveBeenCalled();
+  });
+
+  it('E3d: loadOlderMessages catches failures and exposes retryable error state', async () => {
+    mockGetSession.mockResolvedValue({
+      session: SESSION,
+      messages: [{ id: '3', sessionId: 's1', role: 'user', content: 'third', createdAt: '' }],
+      nextCursor: '3',
+      hasMore: true,
+    });
+    mockGetSessionMessages.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHook(() => useSession());
+    await act(async () => {
+      await result.current.loadSession('s1');
+    });
+
+    await act(async () => {
+      await expect(result.current.loadOlderMessages()).resolves.toBe(false);
+    });
+
+    expect(result.current.loadingOlder).toBe(false);
+    expect(result.current.historyError).toBe('network down');
+    expect(result.current.messages.map((m) => m.id)).toEqual(['3']);
+    expect(result.current.hasMoreHistory).toBe(true);
   });
 
   // --------------- Send message ---------------
@@ -322,6 +393,8 @@ describe('useSession', () => {
   it('E11: clearSession aborts and resets all state', async () => {
     mockGetSession.mockResolvedValue({
       session: SESSION,
+      nextCursor: null,
+      hasMore: false,
       messages: [{ id: '1', sessionId: 's1', role: 'user' as const, content: 'hi', createdAt: '' }],
     });
     mockGetFiles.mockResolvedValue(['guidance.md']);

@@ -29,6 +29,10 @@ export default function App() {
     writingFile,
     failedMessage,
     retrySend,
+    hasMoreHistory,
+    loadingOlder,
+    historyError,
+    loadOlderMessages,
   } = useSession();
   const { handleSelection } = useTextSelection();
 
@@ -249,6 +253,10 @@ export default function App() {
             onReferenceClick={handleReferenceClick}
             failedMessage={failedMessage}
             onRetry={retrySend}
+            hasMoreHistory={hasMoreHistory}
+            loadingOlder={loadingOlder}
+            historyError={historyError}
+            onLoadOlder={loadOlderMessages}
           />
         </div>
       </div>

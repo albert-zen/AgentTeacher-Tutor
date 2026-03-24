@@ -3,6 +3,14 @@ import * as api from '../api/client';
 import type { SSEEvent, MessagePart } from '../api/client';
 import { extractReferencesFromText } from '../utils/serializeEditor';
 
+const MESSAGE_PAGE_SIZE = 50;
+
+function prependUniqueMessages(olderMessages: api.ChatMessage[], currentMessages: api.ChatMessage[]) {
+  const seen = new Set(currentMessages.map((message) => message.id));
+  const uniqueOlderMessages = olderMessages.filter((message) => !seen.has(message.id));
+  return [...uniqueOlderMessages, ...currentMessages];
+}
+
 export function useSession() {
   const [session, setSession] = useState<api.Session | null>(null);
   const [messages, setMessages] = useState<api.ChatMessage[]>([]);
@@ -11,8 +19,13 @@ export function useSession() {
   const [streamingParts, setStreamingParts] = useState<MessagePart[]>([]);
   const [writingFile, setWritingFile] = useState<string | null>(null);
   const [failedMessage, setFailedMessage] = useState<{ message: string } | null>(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sessionRef = useRef<api.Session | null>(null);
+  const nextCursorRef = useRef<string | null>(null);
+  const loadingOlderRef = useRef(false);
 
   const refreshFilesBySessionId = useCallback(async (sessionId: string) => {
     const f = await api.getFiles(sessionId);
@@ -112,6 +125,11 @@ export function useSession() {
       setSession(sess);
       sessionRef.current = sess;
       setMessages([]);
+      setHasMoreHistory(false);
+      setLoadingOlder(false);
+      setHistoryError(null);
+      nextCursorRef.current = null;
+      loadingOlderRef.current = false;
       setFiles([]);
       sendMessage(sess.id, concept);
     },
@@ -120,14 +138,47 @@ export function useSession() {
 
   const loadSession = useCallback(
     async (id: string) => {
-      const data = await api.getSession(id);
+      const data = await api.getSession(id, { limit: MESSAGE_PAGE_SIZE });
       setSession(data.session);
       sessionRef.current = data.session;
       setMessages(data.messages);
+      setHasMoreHistory(data.hasMore);
+      setLoadingOlder(false);
+      setHistoryError(null);
+      nextCursorRef.current = data.nextCursor;
+      loadingOlderRef.current = false;
       await refreshFilesBySessionId(id);
     },
     [refreshFilesBySessionId],
   );
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!sessionRef.current || loadingOlderRef.current || !hasMoreHistory) return false;
+
+    const before = nextCursorRef.current ?? messages[0]?.id;
+    if (!before) return false;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    setHistoryError(null);
+
+    try {
+      const page = await api.getSessionMessages(sessionRef.current.id, {
+        before,
+        limit: MESSAGE_PAGE_SIZE,
+      });
+      setMessages((prev) => prependUniqueMessages(page.items, prev));
+      setHasMoreHistory(page.hasMore);
+      nextCursorRef.current = page.nextCursor;
+      return true;
+    } catch (error: unknown) {
+      setHistoryError(error instanceof Error && error.message ? error.message : '加载更早消息失败');
+      return false;
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [hasMoreHistory, messages]);
 
   const send = useCallback(
     (message: string) => {
@@ -152,6 +203,11 @@ export function useSession() {
     setSession(null);
     sessionRef.current = null;
     setMessages([]);
+    setHasMoreHistory(false);
+    nextCursorRef.current = null;
+    loadingOlderRef.current = false;
+    setLoadingOlder(false);
+    setHistoryError(null);
     setFiles([]);
     setStreaming(false);
     setStreamingParts([]);
@@ -184,5 +240,9 @@ export function useSession() {
     writingFile,
     failedMessage,
     retrySend,
+    hasMoreHistory,
+    loadingOlder,
+    historyError,
+    loadOlderMessages,
   };
 }

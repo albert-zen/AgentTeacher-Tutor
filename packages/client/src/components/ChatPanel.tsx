@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef, memo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -17,6 +18,8 @@ interface Message {
   parts?: MessagePart[];
 }
 
+type ChatRow = { type: 'message'; key: string; msg: Message } | { type: 'streaming'; key: string };
+
 interface Props {
   messages: Message[];
   streaming: boolean;
@@ -27,6 +30,10 @@ interface Props {
   onReferenceClick?: (file: string, startLine?: number, endLine?: number) => void;
   failedMessage?: { message: string } | null;
   onRetry?: () => void;
+  hasMoreHistory?: boolean;
+  loadingOlder?: boolean;
+  historyError?: string | null;
+  onLoadOlder?: () => Promise<unknown> | unknown;
 }
 
 export interface ChatPanelHandle {
@@ -35,11 +42,17 @@ export interface ChatPanelHandle {
   insertText: (text: string) => void;
 }
 
-function MessageContent({ content, onRefClick }: { content: string; onRefClick?: Props['onReferenceClick'] }) {
+const MessageContent = memo(function MessageContent({
+  content,
+  onRefClick,
+}: {
+  content: string;
+  onRefClick?: Props['onReferenceClick'];
+}) {
   const parts: (string | { file: string; start?: number; end?: number; raw: string })[] = [];
   let last = 0;
   const regex = new RegExp(REF_PATTERN, 'g');
-  let match;
+  let match: RegExpExecArray | null;
   while ((match = regex.exec(content)) !== null) {
     if (match.index > last) parts.push(content.slice(last, match.index));
     parts.push({
@@ -73,7 +86,7 @@ function MessageContent({ content, onRefClick }: { content: string; onRefClick?:
       )}
     </div>
   );
-}
+});
 
 function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): string {
   const path =
@@ -91,7 +104,11 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
   return `${part.toolName} done`;
 }
 
-function ToolEventCard({ part }: { part: MessagePart & { type: 'tool-call' | 'tool-result' } }) {
+const ToolEventCard = memo(function ToolEventCard({
+  part,
+}: {
+  part: MessagePart & { type: 'tool-call' | 'tool-result' };
+}) {
   const [expanded, setExpanded] = useState(false);
   const isCall = part.type === 'tool-call';
   const icon = isCall ? (part.toolName === 'read_file' ? '\u{1F4D6}' : '\u{270F}\u{FE0F}') : '\u2713';
@@ -113,9 +130,15 @@ function ToolEventCard({ part }: { part: MessagePart & { type: 'tool-call' | 'to
       )}
     </div>
   );
-}
+});
 
-function PartsRenderer({ parts, onRefClick }: { parts: MessagePart[]; onRefClick?: Props['onReferenceClick'] }) {
+const PartsRenderer = memo(function PartsRenderer({
+  parts,
+  onRefClick,
+}: {
+  parts: MessagePart[];
+  onRefClick?: Props['onReferenceClick'];
+}) {
   return (
     <>
       {parts.map((part, i) => {
@@ -130,9 +153,15 @@ function PartsRenderer({ parts, onRefClick }: { parts: MessagePart[]; onRefClick
       })}
     </>
   );
-}
+});
 
-function LegacyRenderer({ msg, onRefClick }: { msg: Message; onRefClick?: Props['onReferenceClick'] }) {
+const LegacyRenderer = memo(function LegacyRenderer({
+  msg,
+  onRefClick,
+}: {
+  msg: Message;
+  onRefClick?: Props['onReferenceClick'];
+}) {
   return (
     <>
       {msg.toolEvents && msg.toolEvents.length > 0 && (
@@ -149,15 +178,96 @@ function LegacyRenderer({ msg, onRefClick }: { msg: Message; onRefClick?: Props[
       )}
     </>
   );
-}
+});
+
+const MessageBubble = memo(function MessageBubble({
+  msg,
+  onRefClick,
+}: {
+  msg: Message;
+  onRefClick?: Props['onReferenceClick'];
+}) {
+  return (
+    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
+          msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'
+        }`}
+      >
+        {msg.role === 'assistant' ? (
+          msg.parts && msg.parts.length > 0 ? (
+            <PartsRenderer parts={msg.parts} onRefClick={onRefClick} />
+          ) : (
+            <LegacyRenderer msg={msg} onRefClick={onRefClick} />
+          )
+        ) : (
+          msg.content && (
+            <div className="prose prose-invert prose-sm max-w-none">
+              <MessageContent content={msg.content} onRefClick={onRefClick} />
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+});
+
+const StreamingBubble = memo(function StreamingBubble({
+  streamingParts,
+  onRefClick,
+}: {
+  streamingParts: MessagePart[];
+  onRefClick?: Props['onReferenceClick'];
+}) {
+  if (streamingParts.length > 0) {
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
+          <PartsRenderer parts={streamingParts} onRefClick={onRefClick} />
+          <div className="flex items-center gap-1.5 mt-1.5 text-zinc-400 animate-pulse">
+            <div className="flex gap-0.5">
+              <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0ms]" />
+              <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:150ms]" />
+              <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:300ms]" />
+            </div>
+            <span className="text-xs">处理中</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex justify-start">
+      <div className="px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
+        <span className="animate-pulse">思考中...</span>
+      </div>
+    </div>
+  );
+});
 
 const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
-  { messages, streaming, streamingParts, copySource, onSend, onStop, onReferenceClick, failedMessage, onRetry },
+  {
+    messages,
+    streaming,
+    streamingParts,
+    copySource,
+    onSend,
+    onStop,
+    onReferenceClick,
+    failedMessage,
+    onRetry,
+    hasMoreHistory = false,
+    loadingOlder = false,
+    historyError = null,
+    onLoadOlder,
+  },
   ref,
 ) {
-  const bottomRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const prependSnapshotRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
+  const olderRequestInFlightRef = useRef(false);
 
   const editor = useEditor({
     extensions: [
@@ -253,19 +363,79 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
     [],
   );
 
+  const runLoadOlder = useCallback(() => {
+    if (olderRequestInFlightRef.current || !onLoadOlder) return;
+    olderRequestInFlightRef.current = true;
+    Promise.resolve(onLoadOlder())
+      .catch(() => {})
+      .finally(() => {
+        olderRequestInFlightRef.current = false;
+      });
+  }, [onLoadOlder]);
+
   const handleScroll = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
     const threshold = 80;
     isNearBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
-  }, []);
+    if (el.scrollTop <= 120 && hasMoreHistory && !loadingOlder) {
+      if (olderRequestInFlightRef.current || !onLoadOlder) return;
+      prependSnapshotRef.current = { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight };
+      runLoadOlder();
+    }
+  }, [hasMoreHistory, loadingOlder, onLoadOlder, runLoadOlder]);
+
+  const handleLoadOlder = useCallback(() => {
+    if (!hasMoreHistory || loadingOlder || !onLoadOlder || olderRequestInFlightRef.current) return;
+    const el = messagesContainerRef.current;
+    if (el) {
+      prependSnapshotRef.current = { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight };
+    }
+    runLoadOlder();
+  }, [hasMoreHistory, loadingOlder, onLoadOlder, runLoadOlder]);
+
+  const rows = useMemo(() => {
+    const items: ChatRow[] = messages.map((msg) => ({ type: 'message', key: msg.id, msg }));
+    if (streaming) {
+      items.push({ type: 'streaming', key: '__streaming__' });
+    }
+    return items;
+  }, [messages, streaming]);
+
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => 120,
+    overscan: 8,
+  });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, messages, streamingParts]);
 
   useEffect(() => {
     if (isNearBottomRef.current) {
-      const el = messagesContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+      const frame = window.requestAnimationFrame(() => {
+        const el = messagesContainerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+      return () => window.cancelAnimationFrame(frame);
     }
-  }, [messages, streamingParts]);
+  }, [messages, streamingParts, streaming]);
+
+  useEffect(() => {
+    if (loadingOlder || !prependSnapshotRef.current) return;
+    const snapshot = prependSnapshotRef.current;
+    const frame = window.requestAnimationFrame(() => {
+      const el = messagesContainerRef.current;
+      if (!el) return;
+      const delta = el.scrollHeight - snapshot.scrollHeight;
+      el.scrollTop = snapshot.scrollTop + delta;
+      prependSnapshotRef.current = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, loadingOlder]);
 
   const isEmpty = !editor || !serializeEditorContent(editor);
 
@@ -275,58 +445,40 @@ const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         <span className="text-sm font-semibold text-zinc-400">Teacher</span>
       </div>
 
-      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        {useMemo(
-          () =>
-            messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
-                    msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'
-                  }`}
-                >
-                  {msg.role === 'assistant' ? (
-                    msg.parts && msg.parts.length > 0 ? (
-                      <PartsRenderer parts={msg.parts} onRefClick={onReferenceClick} />
-                    ) : (
-                      <LegacyRenderer msg={msg} onRefClick={onReferenceClick} />
-                    )
-                  ) : (
-                    msg.content && (
-                      <div className="prose prose-invert prose-sm max-w-none">
-                        <MessageContent content={msg.content} onRefClick={onReferenceClick} />
-                      </div>
-                    )
-                  )}
-                </div>
-              </div>
-            )),
-          [messages, onReferenceClick],
+      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
+        {(hasMoreHistory || loadingOlder) && (
+          <div className="pb-3 flex flex-col items-center gap-2">
+            <button
+              onClick={handleLoadOlder}
+              disabled={loadingOlder || !hasMoreHistory}
+              className="px-3 py-1.5 rounded-full border border-zinc-700 bg-zinc-900 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {loadingOlder ? '加载更早消息中...' : '加载更早消息'}
+            </button>
+            {historyError && <div className="text-xs text-red-400">{historyError}</div>}
+          </div>
         )}
 
-        {streaming && streamingParts.length > 0 && (
-          <div className="flex justify-start">
-            <div className="max-w-[85%] px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-200">
-              <PartsRenderer parts={streamingParts} onRefClick={onReferenceClick} />
-              <div className="flex items-center gap-1.5 mt-1.5 text-zinc-400 animate-pulse">
-                <div className="flex gap-0.5">
-                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:300ms]" />
-                </div>
-                <span className="text-xs">处理中</span>
+        <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index];
+            return (
+              <div
+                key={row.key}
+                ref={rowVirtualizer.measureElement}
+                data-index={virtualRow.index}
+                className="absolute left-0 top-0 w-full pb-4"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                {row.type === 'message' ? (
+                  <MessageBubble msg={row.msg} onRefClick={onReferenceClick} />
+                ) : (
+                  <StreamingBubble streamingParts={streamingParts} onRefClick={onReferenceClick} />
+                )}
               </div>
-            </div>
-          </div>
-        )}
-        {streaming && streamingParts.length === 0 && (
-          <div className="flex justify-start">
-            <div className="px-3 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400">
-              <span className="animate-pulse">思考中...</span>
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
+            );
+          })}
+        </div>
       </div>
 
       {failedMessage && (

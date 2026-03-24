@@ -13,6 +13,12 @@ export interface Session {
   createdAt: string;
 }
 
+export interface MessagePage {
+  items: ChatMessage[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface ToolEvent {
   type: 'tool-call' | 'tool-result';
   toolName: string;
@@ -76,8 +82,33 @@ export async function getSessions(): Promise<Session[]> {
   return res.json();
 }
 
-export async function getSession(id: string): Promise<{ session: Session; messages: ChatMessage[] }> {
-  const res = await fetch(`${BASE}/session/${id}`);
+export async function getSession(
+  id: string,
+  options?: { limit?: number },
+): Promise<{ session: Session; messages: ChatMessage[]; nextCursor: string | null; hasMore: boolean }> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) {
+    params.set('limit', String(options.limit));
+  }
+  const query = params.toString();
+  const res = await fetch(`${BASE}/session/${id}${query ? `?${query}` : ''}`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function getSessionMessages(
+  id: string,
+  options: { before?: string; limit?: number } = {},
+): Promise<MessagePage> {
+  const params = new URLSearchParams();
+  if (options.before) {
+    params.set('before', options.before);
+  }
+  if (options.limit !== undefined) {
+    params.set('limit', String(options.limit));
+  }
+  const query = params.toString();
+  const res = await fetch(`${BASE}/session/${id}/messages${query ? `?${query}` : ''}`);
   await assertOk(res);
   return res.json();
 }

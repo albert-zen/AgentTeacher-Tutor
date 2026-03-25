@@ -63,7 +63,7 @@ export default function SelectionPopup({ onAsk }: Props) {
           setText('');
           window.getSelection()?.removeAllRanges();
         }}
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg shadow-lg shadow-black/50 whitespace-nowrap"
+        className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-400/25 bg-blue-600/75 px-3 py-1.5 text-xs text-zinc-100 shadow-lg shadow-black/35 transition-colors hover:bg-blue-500/75"
       >
         <span>💬</span> Ask Teacher
       </button>

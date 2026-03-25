@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @plugin "@tailwindcss/typography";
 
+:root {
+  --editor-selection-bg: rgba(148, 163, 184, 0.24);
+  --editor-selection-text: rgb(244 244 245);
+}
+
 html,
 body,
 #root {
@@ -45,6 +50,21 @@ body,
 
 .animate-in {
   animation: modal-in 0.15s ease-out;
+}
+
+/* Keep editor text selection aligned with the notebook's muted dark palette. */
+[data-editor-content]::selection,
+[data-editor-content] *::selection,
+[data-editor-content] textarea::selection {
+  background: var(--editor-selection-bg);
+  color: var(--editor-selection-text);
+}
+
+[data-editor-content]::-moz-selection,
+[data-editor-content] *::-moz-selection,
+[data-editor-content] textarea::-moz-selection {
+  background: var(--editor-selection-bg);
+  color: var(--editor-selection-text);
 }
 
 /* TipTap placeholder */

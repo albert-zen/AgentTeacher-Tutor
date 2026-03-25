@@ -38,7 +38,7 @@ describe('SelectionPopup', () => {
     cleanup();
   });
 
-  it('anchors to the last client rect instead of the whole selection bounding box', () => {
+  it('anchors to the mouseup position instead of the selection bounding box', () => {
     const onAsk = vi.fn();
     const boundingRect = createRect({ left: 80, top: 100, width: 420, height: 60 });
     const firstLineRect = createRect({ left: 90, top: 100, width: 110, height: 20 });
@@ -60,14 +60,14 @@ describe('SelectionPopup', () => {
     render(<SelectionPopup onAsk={onAsk} />);
 
     act(() => {
-      fireEvent.mouseUp(document);
+      fireEvent.mouseUp(document, { clientX: 250, clientY: 190 });
       vi.advanceTimersByTime(20);
     });
 
     const button = screen.getByRole('button', { name: /ask teacher/i });
     const popup = button.parentElement as HTMLElement;
 
-    expect(popup.style.left).toBe('395px');
-    expect(popup.style.top).toBe('120px');
+    expect(popup.style.left).toBe('250px');
+    expect(popup.style.top).toBe('182px');
   });
 });

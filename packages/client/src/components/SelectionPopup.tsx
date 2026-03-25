@@ -4,16 +4,13 @@ interface Props {
   onAsk: (selectedText: string) => void;
 }
 
-function getSelectionAnchorRect(range: Range): DOMRect {
-  const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0);
-  return rects.at(-1) ?? range.getBoundingClientRect();
-}
-
 export default function SelectionPopup({ onAsk }: Props) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [text, setText] = useState('');
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((event: MouseEvent) => {
+    const mousePos = { x: event.clientX, y: event.clientY };
+
     // Small delay to let the selection finalize
     setTimeout(() => {
       const sel = window.getSelection();
@@ -24,12 +21,10 @@ export default function SelectionPopup({ onAsk }: Props) {
       }
 
       const selectedText = sel.toString().trim();
-      const range = sel.getRangeAt(0);
-      const rect = getSelectionAnchorRect(range);
 
       setPos({
-        x: rect.left + rect.width / 2,
-        y: rect.top - 8,
+        x: mousePos.x,
+        y: mousePos.y - 8,
       });
       setText(selectedText);
     }, 10);

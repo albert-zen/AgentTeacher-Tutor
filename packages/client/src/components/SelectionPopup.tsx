@@ -4,6 +4,11 @@ interface Props {
   onAsk: (selectedText: string) => void;
 }
 
+function getSelectionAnchorRect(range: Range): DOMRect {
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0);
+  return rects.at(-1) ?? range.getBoundingClientRect();
+}
+
 export default function SelectionPopup({ onAsk }: Props) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [text, setText] = useState('');
@@ -20,7 +25,7 @@ export default function SelectionPopup({ onAsk }: Props) {
 
       const selectedText = sel.toString().trim();
       const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
+      const rect = getSelectionAnchorRect(range);
 
       setPos({
         x: rect.left + rect.width / 2,

@@ -45,23 +45,7 @@
 - [x] Session 切换与退出时里程碑状态隔离：`App.tsx` 在切换/退出/缺失 `milestones.md` 时即时清空 `milestonesContent`，补回归测试
 - [x] ChatPanel 对话布局改为单列左对齐：用户与助手消息统一左对齐并放宽到全宽，流式与思考态同步
 - [x] 聊天自动滚动流式期间无法上滚：`wheel/touchmove` 触发即时暂停，滚到底部恢复，补底部边界保护与行为测试
-
----
-
-## Tier 1: 体验基础
-
-### 长聊天记录 Session 打开与滚动性能优化（虚拟列表 + 分页加载）
-
-**现状：** 当前 `packages/client/src/hooks/useSession.ts` 的 `loadSession()` 通过 `api.getSession(id)` 一次性拉取完整 `messages` 并 `setMessages(data.messages)`；`packages/server/src/routes/session.ts` 的 `GET /:id` 也直接返回 `store.getMessages(session.id)` 全量消息。聊天渲染侧 `packages/client/src/components/ChatPanel.tsx` 对 `messages` 进行全量 `map` 渲染，且每条消息都会走 `MessageContent`/`MarkdownRenderer` 解析（`packages/client/src/components/MarkdownRenderer.tsx` 包含较重的 Markdown + 代码高亮）。当 session 历史很长时，会出现打开慢、首屏渲染卡顿、滚动掉帧。
-
-**目标：** 打开超长聊天历史 session 时仍保持可接受性能：首屏快速可交互、滚动稳定，避免一次性加载与渲染全部历史。实现“先展示最近消息，向上滚动按需加载更早消息”的常见聊天产品体验。
-
-**工程要点：**
-- 服务端新增消息分页接口（推荐游标分页）：如 `GET /api/session/:id/messages?before=<cursor>&limit=<n>`，返回 `{ items, nextCursor, hasMore }`；`GET /api/session/:id` 仅返回 session 元信息或最近一页消息。
-- 存储层在 `packages/server/src/db/index.ts` 增加分页读取能力（避免每次全量读取后再在路由层切片），并与现有 `messages.json` 格式兼容。
-- 客户端在 `packages/client/src/api/client.ts` / `packages/client/src/hooks/useSession.ts` 增加分页消息加载与“向上加载更多”状态管理，首屏仅拉最近 `N` 条。
-- `packages/client/src/components/ChatPanel.tsx` 引入虚拟列表（如 `@tanstack/react-virtual`）仅渲染可视区消息，保留现有自动滚动逻辑并处理向上分页加载时的滚动锚点。
-- 对重渲染路径做最小优化：`MessageContent`/`MarkdownRenderer` 增加 memo 化，减少无关更新时的 Markdown 重解析；补充长列表场景回归测试（初始加载条数、向上加载、滚动位置稳定）。
+- [x] 长聊天记录 Session 打开与滚动性能优化：消息分页加载 + `@tanstack/react-virtual` 虚拟列表 + 向上加载滚动锚点稳定
 
 ---
 
@@ -312,6 +296,9 @@
     └→ ✅ 用户 Profile 分块
 
   ✅ Tier 1 全部 8 项完成
+  ✅ 长聊天记录 Session 打开与滚动性能优化
+    ├→ ✅ 服务端消息分页接口
+    └→ ✅ 客户端消息虚拟列表 + 向上分页加载
 
   ✅ Context Compiler 完整化
     └→ 自然修复: context-config / references 死代码 / 引用去重 / 历史缺引用
@@ -320,10 +307,6 @@
   ✅ P0-P2 bug 修复（安全/健壮性/死代码/竞态）
 
 待完成:
-  长聊天记录 Session 打开与滚动性能优化（Tier 1）
-    ├→ 依赖: 服务端消息分页接口
-    └→ 依赖: 客户端消息虚拟列表
-
   上下文编排器 Phase 2（可见的上下文面板）
     └→ 依赖: ✅ Context Compiler
 

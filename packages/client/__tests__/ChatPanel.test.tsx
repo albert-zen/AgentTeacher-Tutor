@@ -235,4 +235,42 @@ describe('ChatPanel', () => {
     expect(scrollTop).toBe(290);
     expect(screen.getByText('older-a')).toBeTruthy();
   });
+
+  it('renders friendly labels for web_search tool events', () => {
+    render(
+      <div style={{ height: 600 }}>
+        <ChatPanel
+          messages={[
+            {
+              id: '1',
+              role: 'assistant',
+              content: '',
+              parts: [
+                {
+                  type: 'tool-call',
+                  toolName: 'web_search',
+                  args: { query: 'react compiler' },
+                },
+                {
+                  type: 'tool-result',
+                  toolName: 'web_search',
+                  result: {
+                    success: true,
+                    data: { results: [{ title: 'React Compiler', url: 'https://react.dev/compiler' }] },
+                  },
+                },
+              ],
+            },
+          ]}
+          streaming={false}
+          streamingParts={[]}
+          copySource={copySource}
+          onSend={vi.fn()}
+        />
+      </div>,
+    );
+
+    expect(screen.getByRole('button', { name: /searching web/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /found 1 results/i })).toBeTruthy();
+  });
 });

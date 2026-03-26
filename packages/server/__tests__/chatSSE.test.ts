@@ -127,7 +127,7 @@ describe('Reference resolution', () => {
     await request(app).post(`/api/session/${session.id}/chat`).send({ message: 'see [notes.md:1:2]' });
 
     const call = mockStreamTeacher.mock.calls[0];
-    const llmMessages = call[2] as Array<{ role: string; content: string }>;
+    const llmMessages = call[4] as Array<{ role: string; content: string }>;
     const lastMsg = llmMessages[llmMessages.length - 1];
     expect(lastMsg.content).toContain('line1');
     expect(lastMsg.content).toContain('line2');
@@ -145,7 +145,7 @@ describe('Reference resolution', () => {
     await request(app).post(`/api/session/${session.id}/chat`).send({ message: 'read [missing.md]' });
 
     const call = mockStreamTeacher.mock.calls[0];
-    const llmMessages = call[2] as Array<{ role: string; content: string }>;
+    const llmMessages = call[4] as Array<{ role: string; content: string }>;
     const lastMsg = llmMessages[llmMessages.length - 1];
     expect(lastMsg.content).not.toContain('<selection');
   });
@@ -294,6 +294,42 @@ describe('Streaming event forwarding', () => {
     expect(results).toHaveLength(1);
     expect(results[0].toolName).toBe('read_file');
     expect(results[0].result).toEqual({ content: 'file data' });
+  });
+
+  it('forwards web_search tool events as SSE', async () => {
+    const session = await createSession();
+    mockStreamTeacher.mockResolvedValue(
+      mockStream([
+        {
+          type: 'tool-call',
+          toolName: 'web_search',
+          input: { query: 'react compiler', category: 'general' },
+        },
+        {
+          type: 'tool-result',
+          toolName: 'web_search',
+          output: {
+            success: true,
+            data: {
+              query: 'react compiler',
+              provider: 'searxng',
+              results: [{ title: 'React Compiler', url: 'https://react.dev/compiler' }],
+            },
+          },
+        },
+      ]) as any,
+    );
+
+    const res = await request(app).post(`/api/session/${session.id}/chat`).send({ message: 'search the web' });
+
+    const events = parseSSE(res.text);
+    expect(events.filter((e) => e.type === 'tool-call')[0]).toMatchObject({
+      toolName: 'web_search',
+      args: { query: 'react compiler', category: 'general' },
+    });
+    expect(events.filter((e) => e.type === 'tool-result')[0]).toMatchObject({
+      toolName: 'web_search',
+    });
   });
 
   // E7

@@ -10,6 +10,13 @@ import {
   loadLLMConfig,
   saveLLMConfig,
 } from '../services/llm.js';
+import {
+  loadSearchConfig,
+  loadSessionSearchConfigOverride,
+  saveSearchConfig,
+  saveSessionSearchConfig,
+  clearSessionSearchConfig,
+} from '../services/searchConfig.js';
 
 export function createFilesRouter(store: Store, dataDir: string) {
   const router = Router();
@@ -78,8 +85,9 @@ export function createFilesRouter(store: Store, dataDir: string) {
     try {
       svc.writeFile({ path: filePath, content, startLine, endLine });
       res.json({ success: true, path: filePath });
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
     }
   });
 
@@ -161,6 +169,62 @@ export function createFilesRouter(store: Store, dataDir: string) {
     const svc = new FileService(dataDir);
     svc.writeFile({ path: 'system-prompt.md', content });
     res.json({ success: true });
+  });
+
+  router.get('/search-config', (_req, res) => {
+    res.json(loadSearchConfig(dataDir));
+  });
+
+  router.put('/search-config', (req, res) => {
+    const { enabled, baseURL, defaultMaxResults, timeoutMs } = req.body;
+    const partial: Record<string, boolean | number | string> = {};
+    if (enabled !== undefined) partial.enabled = Boolean(enabled);
+    if (baseURL !== undefined) partial.baseURL = String(baseURL);
+    if (defaultMaxResults !== undefined) partial.defaultMaxResults = Number(defaultMaxResults);
+    if (timeoutMs !== undefined) partial.timeoutMs = Number(timeoutMs);
+    res.json(saveSearchConfig(dataDir, partial));
+  });
+
+  router.get('/session/:id/search-config', (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    const localConfig = loadSessionSearchConfigOverride(dataDir, session.id);
+    res.json({
+      override: !!localConfig,
+      localConfig,
+      effectiveConfig: loadSearchConfig(dataDir, session.id),
+    });
+  });
+
+  router.put('/session/:id/search-config', (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    const { override, enabled } = req.body;
+    if (!override) {
+      clearSessionSearchConfig(dataDir, session.id);
+      res.json({
+        override: false,
+        localConfig: null,
+        effectiveConfig: loadSearchConfig(dataDir, session.id),
+      });
+      return;
+    }
+
+    const localConfig = saveSessionSearchConfig(dataDir, session.id, {
+      enabled: enabled === undefined ? true : Boolean(enabled),
+    });
+    res.json({
+      override: true,
+      localConfig,
+      effectiveConfig: loadSearchConfig(dataDir, session.id),
+    });
   });
 
   // LLM status (read-only, no apiKey exposed)

@@ -203,6 +203,23 @@ export interface LLMStatus {
   baseURL: string;
 }
 
+export interface SearchConfig {
+  enabled: boolean;
+  provider: 'searxng';
+  baseURL: string;
+  defaultMaxResults: number;
+  timeoutMs: number;
+  allowedCategories: string[];
+  allowedEngines: string[];
+  persistResultsByDefault: boolean;
+}
+
+export interface SessionSearchConfigState {
+  override: boolean;
+  localConfig: { enabled?: boolean } | null;
+  effectiveConfig: SearchConfig;
+}
+
 export async function getLLMStatus(): Promise<LLMStatus> {
   const res = await fetch(`${BASE}/llm-status`);
   await assertOk(res);
@@ -216,6 +233,49 @@ export async function updateLLMConfig(config: {
   model?: string;
 }): Promise<LLMStatus> {
   const res = await fetch(`${BASE}/llm-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function getSearchConfig(): Promise<SearchConfig> {
+  const res = await fetch(`${BASE}/search-config`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function updateSearchConfig(config: {
+  enabled?: boolean;
+  baseURL?: string;
+  defaultMaxResults?: number;
+  timeoutMs?: number;
+}): Promise<SearchConfig> {
+  const res = await fetch(`${BASE}/search-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function getSessionSearchConfig(sessionId: string): Promise<SessionSearchConfigState> {
+  const res = await fetch(`${BASE}/session/${sessionId}/search-config`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function updateSessionSearchConfig(
+  sessionId: string,
+  config: {
+    override: boolean;
+    enabled?: boolean;
+  },
+): Promise<SessionSearchConfigState> {
+  const res = await fetch(`${BASE}/session/${sessionId}/search-config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),

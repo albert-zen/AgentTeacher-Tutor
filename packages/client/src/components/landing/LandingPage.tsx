@@ -7,6 +7,7 @@ import ProfileModal from './ProfileModal';
 import SystemPromptModal from './SystemPromptModal';
 import SessionPromptDraftModal from './SessionPromptDraftModal';
 import LLMConfigModal from './LLMConfigModal';
+import SearchConfigModal from './SearchConfigModal';
 
 interface Props {
   sessions: Session[];
@@ -16,13 +17,19 @@ interface Props {
 
 export default function LandingPage({ sessions, onStart, onLoadSession }: Props) {
   const [conceptInput, setConceptInput] = useState('');
-  const [modal, setModal] = useState<'profile' | 'system-prompt' | 'session-prompt' | 'llm' | null>(null);
+  const [modal, setModal] = useState<'profile' | 'system-prompt' | 'session-prompt' | 'llm' | 'search' | null>(null);
+  const [settingsRefreshKey, setSettingsRefreshKey] = useState(0);
 
   const handleStart = () => {
     const concept = conceptInput.trim();
     if (!concept) return;
     onStart(concept);
     setConceptInput('');
+  };
+
+  const handleCloseModal = () => {
+    setModal(null);
+    setSettingsRefreshKey((value) => value + 1);
   };
 
   const latestSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
@@ -70,10 +77,12 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
           <div className="mb-6">
             <p className="text-xs text-zinc-600 uppercase tracking-wider mb-2.5">设置</p>
             <SettingsCards
+              refreshKey={settingsRefreshKey}
               onOpenProfile={() => setModal('profile')}
               onOpenSystemPrompt={() => setModal('system-prompt')}
               onOpenSessionPrompt={() => setModal('session-prompt')}
               onOpenLLM={() => setModal('llm')}
+              onOpenSearch={() => setModal('search')}
             />
           </div>
 
@@ -88,10 +97,11 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
       </div>
 
       {/* Modals */}
-      <ProfileModal open={modal === 'profile'} onClose={() => setModal(null)} />
-      <SystemPromptModal open={modal === 'system-prompt'} onClose={() => setModal(null)} />
-      <SessionPromptDraftModal open={modal === 'session-prompt'} onClose={() => setModal(null)} />
-      <LLMConfigModal open={modal === 'llm'} onClose={() => setModal(null)} />
+      <ProfileModal open={modal === 'profile'} onClose={handleCloseModal} />
+      <SystemPromptModal open={modal === 'system-prompt'} onClose={handleCloseModal} />
+      <SessionPromptDraftModal open={modal === 'session-prompt'} onClose={handleCloseModal} />
+      <LLMConfigModal open={modal === 'llm'} onClose={handleCloseModal} />
+      <SearchConfigModal open={modal === 'search'} onClose={handleCloseModal} />
     </div>
   );
 }

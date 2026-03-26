@@ -77,6 +77,62 @@ describe('Session prompt draft routes', () => {
   });
 });
 
+describe('Search config routes', () => {
+  it('GET /api/search-config returns defaults when no config exists', async () => {
+    const res = await request(app).get('/api/search-config');
+    expect(res.status).toBe(200);
+    expect(res.body.provider).toBe('searxng');
+    expect(res.body.enabled).toBe(false);
+  });
+
+  it('PUT /api/search-config persists global search config', async () => {
+    const put = await request(app).put('/api/search-config').send({
+      enabled: true,
+      baseURL: 'http://localhost:9999',
+      defaultMaxResults: 7,
+      timeoutMs: 9000,
+    });
+    expect(put.status).toBe(200);
+    expect(put.body.enabled).toBe(true);
+    expect(put.body.baseURL).toBe('http://localhost:9999');
+
+    const get = await request(app).get('/api/search-config');
+    expect(get.body.enabled).toBe(true);
+    expect(get.body.defaultMaxResults).toBe(7);
+  });
+
+  it('GET /api/session/:id/search-config returns effective config and override metadata', async () => {
+    const id = await createTestSession();
+    await request(app).put('/api/search-config').send({ enabled: true });
+
+    const res = await request(app).get(`/api/session/${id}/search-config`);
+    expect(res.status).toBe(200);
+    expect(res.body.override).toBe(false);
+    expect(res.body.localConfig).toBeNull();
+    expect(res.body.effectiveConfig.enabled).toBe(true);
+  });
+
+  it('PUT /api/session/:id/search-config saves and clears a session override', async () => {
+    const id = await createTestSession();
+    await request(app).put('/api/search-config').send({ enabled: true });
+
+    const put = await request(app).put(`/api/session/${id}/search-config`).send({
+      override: true,
+      enabled: false,
+    });
+    expect(put.status).toBe(200);
+    expect(put.body.override).toBe(true);
+    expect(put.body.localConfig).toEqual({ enabled: false });
+    expect(put.body.effectiveConfig.enabled).toBe(false);
+
+    const clear = await request(app).put(`/api/session/${id}/search-config`).send({ override: false });
+    expect(clear.status).toBe(200);
+    expect(clear.body.override).toBe(false);
+    expect(clear.body.localConfig).toBeNull();
+    expect(clear.body.effectiveConfig.enabled).toBe(true);
+  });
+});
+
 describe('File CRUD routes', () => {
   // E11
   it('GET /:sessionId/files returns all files, excluding messages.json and dotfiles', async () => {

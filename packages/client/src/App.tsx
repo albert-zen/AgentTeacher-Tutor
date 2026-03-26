@@ -8,6 +8,7 @@ import SelectionPopup from './components/SelectionPopup';
 import ResizeHandle from './components/ResizeHandle';
 import LandingPage from './components/landing/LandingPage';
 import SessionPromptModal from './components/SessionPromptModal';
+import SessionSearchConfigModal from './components/SessionSearchConfigModal';
 import { useSession } from './hooks/useSession';
 import { useTextSelection, getSourceLineFromNode } from './hooks/useTextSelection';
 import * as api from './api/client';
@@ -45,6 +46,7 @@ export default function App() {
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const [editingSessionPrompt, setEditingSessionPrompt] = useState(false);
+  const [editingSessionSearch, setEditingSessionSearch] = useState(false);
   const [fileTreeWidth, setFileTreeWidth] = useState(208);
   const [chatWidth, setChatWidth] = useState(384);
 
@@ -210,6 +212,12 @@ export default function App() {
           >
             教学指令
           </button>
+          <button
+            onClick={() => setEditingSessionSearch(true)}
+            className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-0.5 border border-zinc-700 rounded hover:border-zinc-500 transition-colors"
+          >
+            联网搜索
+          </button>
         </div>
       </div>
 
@@ -273,6 +281,14 @@ export default function App() {
           sessionId={session.id}
           open={editingSessionPrompt}
           onClose={() => setEditingSessionPrompt(false)}
+        />
+      )}
+
+      {editingSessionSearch && session && (
+        <SessionSearchConfigModal
+          sessionId={session.id}
+          open={editingSessionSearch}
+          onClose={() => setEditingSessionSearch(false)}
         />
       )}
 

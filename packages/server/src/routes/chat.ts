@@ -81,7 +81,7 @@ export function createChatRouter(store: Store, dataDir: string) {
 
     try {
       const model = createLLMClient(currentConfig);
-      const result = await streamTeacherResponse(model, fileService, compiled.messages, compiled.system);
+      const result = await streamTeacherResponse(model, fileService, dataDir, session.id, compiled.messages, compiled.system);
 
       let fullText = '';
       const toolEvents: ToolEvent[] = [];

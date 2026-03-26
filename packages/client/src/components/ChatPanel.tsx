@@ -94,6 +94,7 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
   if (part.type === 'tool-call') {
     if (part.toolName === 'read_file') return `Reading ${path ?? 'file'}...`;
     if (part.toolName === 'write_file') return `Writing ${path ?? 'file'}...`;
+    if (part.toolName === 'web_search') return 'Searching web...';
     return `${part.toolName}...`;
   }
   const resultPath = (part.result as Record<string, unknown>)?.data
@@ -101,6 +102,11 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
     : undefined;
   if (part.toolName === 'read_file') return `Read ${resultPath ?? 'file'}`;
   if (part.toolName === 'write_file') return `Wrote ${resultPath ?? 'file'}`;
+  if (part.toolName === 'web_search') {
+    const results = ((((part.result as Record<string, unknown>)?.data as Record<string, unknown>)?.results ??
+      []) as unknown[])?.length;
+    return `Found ${results ?? 0} results`;
+  }
   return `${part.toolName} done`;
 }
 

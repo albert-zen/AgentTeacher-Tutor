@@ -38,13 +38,22 @@ export async function searchSearXNG({
     url.searchParams.set('time_range', timeRange);
   }
 
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`SearXNG request failed with status ${response.status}${body ? `: ${body}` : ''}`);
-  }
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`SearXNG request failed with status ${response.status}${body ? `: ${body}` : ''}`);
+    }
 
-  return (await response.json()) as SearXNGSearchResponse;
+    return (await response.json()) as SearXNGSearchResponse;
+  } catch (error: unknown) {
+    const causeCode =
+      error instanceof Error && error.cause && typeof error.cause === 'object' && 'code' in error.cause
+        ? (error.cause as { code?: string }).code
+        : undefined;
+    const suffix = causeCode ? ` (${causeCode})` : error instanceof Error ? `: ${error.message}` : '';
+    throw new Error(`Unable to reach external search endpoint ${baseURL}${suffix}`);
+  }
 }

@@ -56,6 +56,13 @@ export default function SearchConfigModal({ open, onClose }: Props) {
     setBusyToolId(`${toolId}:${action}`);
     setFeedback(null);
     try {
+      if (toolId === 'web_search' && searchDraft && action !== 'stop') {
+        const next = await api.updateTool('web_search', searchDraft);
+        setState(next);
+        const webSearch = next.tools.find((item) => item.id === 'web_search');
+        setSearchDraft((webSearch?.config as WebSearchToolConfig) ?? null);
+      }
+
       const updated = await api.runToolRuntimeAction(toolId, action);
       setState((prev) =>
         prev

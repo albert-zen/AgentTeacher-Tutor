@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import SearchConfigModal from '../src/components/landing/SearchConfigModal';
 import SessionSearchConfigModal from '../src/components/SessionSearchConfigModal';
 
@@ -124,7 +124,15 @@ describe('Tools modals', () => {
     expect(screen.getByText('搜索服务端口')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '检查' }));
-    expect(mockRunToolRuntimeAction).toHaveBeenCalledWith('web_search', 'check');
+    await waitFor(() => {
+      expect(mockUpdateTool).toHaveBeenCalledWith(
+        'web_search',
+        expect.objectContaining({
+          runtimeMode: 'local',
+        }),
+      );
+      expect(mockRunToolRuntimeAction).toHaveBeenCalledWith('web_search', 'check');
+    });
   });
 
   it('renders the session tools modal and saves a session override', async () => {

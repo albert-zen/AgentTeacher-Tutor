@@ -110,7 +110,7 @@ export function buildTools(fileService: FileService, dataDir: string, sessionId:
         query: z.string().describe('Search query'),
         maxResults: z.number().int().positive().max(10).optional().describe('Maximum number of results to return'),
         category: z.string().optional().describe('Search category, such as general, news, it, or science'),
-        engines: z.array(z.string()).optional().describe('Optional list of SearXNG engines to use'),
+        engines: z.array(z.string()).optional().describe('Optional list of search engines to use in external mode'),
         timeRange: z
           .enum(['day', 'month', 'year'])
           .optional()

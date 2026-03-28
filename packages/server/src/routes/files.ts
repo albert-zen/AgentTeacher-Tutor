@@ -252,7 +252,8 @@ export function createFilesRouter(store: Store, dataDir: string) {
   router.put('/search-config', async (req, res) => {
     const patch = {
       enabledByDefault: req.body.enabled,
-      upstream: req.body.baseURL ? { remoteBaseURL: String(req.body.baseURL) } : undefined,
+      runtimeMode: req.body.baseURL ? ('external' as const) : undefined,
+      externalBaseURL: req.body.baseURL ? String(req.body.baseURL) : undefined,
       defaultMaxResults: req.body.defaultMaxResults === undefined ? undefined : Number(req.body.defaultMaxResults),
       timeoutMs: req.body.timeoutMs === undefined ? undefined : Number(req.body.timeoutMs),
     };

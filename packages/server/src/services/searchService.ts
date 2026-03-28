@@ -1,6 +1,5 @@
 import { getToolRuntimeManager } from './toolRuntimeManager.js';
 import { resolveToolContext } from './toolManager.js';
-import { searchSearXNG, type SearXNGSearchResult } from './searchProviders/searxng.js';
 import type { WebSearchToolSettings } from './toolConfig.js';
 
 export interface WebSearchInput {
@@ -23,7 +22,7 @@ export interface WebSearchSuccess {
   success: true;
   data: {
     query: string;
-    provider: 'searxng';
+    provider: 'searxng' | 'duckduckgo';
     results: WebSearchItem[];
   };
 }
@@ -36,36 +35,19 @@ export interface WebSearchFailure {
 export type WebSearchResult = WebSearchSuccess | WebSearchFailure;
 
 interface SidecarSearchResponse {
-  provider: 'searxng';
+  provider: 'searxng' | 'duckduckgo';
   results: WebSearchItem[];
   error?: string;
-}
-
-function normalizeItems(items: SearXNGSearchResult[], maxResults: number): WebSearchItem[] {
-  const seen = new Set<string>();
-  const normalized: WebSearchItem[] = [];
-
-  for (const item of items) {
-    if (!item.url || !item.title) continue;
-    if (seen.has(item.url)) continue;
-    seen.add(item.url);
-    normalized.push({
-      title: item.title,
-      url: item.url,
-      snippet: item.content ?? '',
-      source: item.engine ?? 'unknown',
-      publishedAt: item.publishedDate,
-    });
-    if (normalized.length >= maxResults) break;
-  }
-
-  return normalized;
 }
 
 function validateInput(config: WebSearchToolSettings, input: WebSearchInput) {
   const category = input.category ?? 'general';
   if (config.allowedCategories.length > 0 && !config.allowedCategories.includes(category)) {
     return { error: `Search category "${category}" is not allowed.` };
+  }
+
+  if (config.runtimeMode === 'local' && input.engines && input.engines.length > 0) {
+    return { error: 'Local search mode does not support custom engines.' };
   }
 
   const engines = input.engines?.filter((engine) =>
@@ -82,7 +64,7 @@ function validateInput(config: WebSearchToolSettings, input: WebSearchInput) {
   };
 }
 
-async function callManagedSidecar(config: WebSearchToolSettings, input: WebSearchInput, validated: { category: string; engines?: string[]; maxResults: number }) {
+async function callSidecar(config: WebSearchToolSettings, input: WebSearchInput, validated: { category: string; engines?: string[]; maxResults: number }) {
   const response = await fetch(`http://127.0.0.1:${config.sidecar.port}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -105,21 +87,6 @@ async function callManagedSidecar(config: WebSearchToolSettings, input: WebSearc
   return payload as SidecarSearchResponse;
 }
 
-async function callExternalProvider(config: WebSearchToolSettings, input: WebSearchInput, validated: { category: string; engines?: string[]; maxResults: number }) {
-  const payload = await searchSearXNG({
-    query: input.query,
-    category: validated.category,
-    engines: validated.engines,
-    timeRange: input.timeRange,
-    timeoutMs: config.timeoutMs,
-    baseURL: config.upstream.remoteBaseURL,
-  });
-  return {
-    provider: 'searxng' as const,
-    results: normalizeItems(payload.results ?? [], validated.maxResults),
-  };
-}
-
 export async function searchWeb(dataDir: string, sessionId: string, input: WebSearchInput): Promise<WebSearchResult> {
   const toolContext = resolveToolContext(dataDir, sessionId);
   const tool = toolContext.visibleTools.find((item) => item.id === 'web_search');
@@ -134,21 +101,16 @@ export async function searchWeb(dataDir: string, sessionId: string, input: WebSe
   }
 
   try {
-    if (config.runtimeMode === 'managed') {
-      const runtimeManager = getToolRuntimeManager(process.cwd());
-      const snapshot = await runtimeManager.ensureReady('web_search', config);
-      if (snapshot.status !== 'ready') {
-        return {
-          success: false,
-          error: snapshot.message || 'Local web search runtime is not ready.',
-        };
-      }
+    const runtimeManager = getToolRuntimeManager(process.cwd());
+    const snapshot = await runtimeManager.ensureReady('web_search', config);
+    if (snapshot.status !== 'ready') {
+      return {
+        success: false,
+        error: snapshot.message || 'Web search runtime is not ready.',
+      };
     }
 
-    const payload =
-      config.runtimeMode === 'managed'
-        ? await callManagedSidecar(config, input, validated)
-        : await callExternalProvider(config, input, validated);
+    const payload = await callSidecar(config, input, validated);
 
     return {
       success: true,

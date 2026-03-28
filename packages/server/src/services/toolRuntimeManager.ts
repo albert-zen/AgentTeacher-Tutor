@@ -17,15 +17,6 @@ interface ManagedRuntime {
   snapshot: ToolRuntimeSnapshot;
 }
 
-interface ManagedHealthPayload {
-  ok?: boolean;
-  listening?: boolean;
-  upstreamReachable?: boolean;
-  remoteBaseURL?: string;
-  status?: number;
-  error?: string;
-}
-
 function now() {
   return new Date().toISOString();
 }
@@ -109,23 +100,18 @@ export class ToolRuntimeManager {
 
     const webConfig = config as WebSearchToolSettings;
 
-    if (config.runtimeMode === 'managed') {
+    if (config.runtimeMode === 'local') {
       try {
         const backendResponse = await ping(`http://127.0.0.1:${webConfig.backend.port}/health`, 1500);
         const sidecarResponse = await ping(`http://127.0.0.1:${webConfig.sidecar.port}/health`, 1500);
-        const backendPayload = (await backendResponse.json().catch(() => null)) as ManagedHealthPayload | null;
-        const backendReady = backendResponse.ok && backendPayload?.ok !== false;
+        const backendReady = backendResponse.ok;
         const sidecarReady = sidecarResponse.ok;
-        const upstreamReachable = backendPayload?.upstreamReachable !== false;
-        const remoteBaseURL = backendPayload?.remoteBaseURL ?? webConfig.upstream.remoteBaseURL;
         const snapshot = {
-          status: backendReady && sidecarReady && upstreamReachable ? ('ready' as const) : ('error' as const),
+          status: backendReady && sidecarReady ? ('ready' as const) : ('error' as const),
           message:
             !backendReady || !sidecarReady
-              ? `Managed search stack is unhealthy (backend ${backendResponse.status}, sidecar ${sidecarResponse.status}).`
-              : upstreamReachable
-                ? `Backend ${webConfig.backend.port} and sidecar ${webConfig.sidecar.port} are ready.`
-                : `Managed search stack is running, but upstream search source ${remoteBaseURL} is unreachable${backendPayload?.error ? `: ${backendPayload.error}` : ''}.`,
+              ? `Local search stack is unhealthy (backend ${backendResponse.status}, sidecar ${sidecarResponse.status}).`
+              : `Local search backend ${webConfig.backend.port} and interface ${webConfig.sidecar.port} are ready.`,
           updatedAt: now(),
         };
         this.setSnapshot(toolId, snapshot);
@@ -133,7 +119,7 @@ export class ToolRuntimeManager {
       } catch (error: unknown) {
         const message =
           error instanceof Error && error.cause && typeof error.cause === 'object' && 'code' in error.cause
-            ? `Managed search stack unavailable: ${(error.cause as { code?: string }).code ?? error.message}`
+            ? `Local search stack unavailable: ${(error.cause as { code?: string }).code ?? error.message}`
             : error instanceof Error
               ? error.message
               : String(error);
@@ -148,19 +134,19 @@ export class ToolRuntimeManager {
     }
 
     try {
-      const response = await ping(webConfig.upstream.remoteBaseURL, 1500);
+      const sidecarResponse = await ping(`http://127.0.0.1:${webConfig.sidecar.port}/health`, 1500);
       const snapshot = {
-        status: response.ok ? ('ready' as const) : ('error' as const),
-        message: response.ok
-          ? `External endpoint reachable: ${webConfig.upstream.remoteBaseURL}`
-          : `External endpoint returned ${response.status}.`,
+        status: sidecarResponse.ok ? ('ready' as const) : ('error' as const),
+        message: sidecarResponse.ok
+          ? `External search interface ${webConfig.sidecar.port} is ready.`
+          : `External search interface returned ${sidecarResponse.status}.`,
         updatedAt: now(),
       };
       this.setSnapshot(toolId, snapshot);
       return snapshot;
     } catch (error: unknown) {
       const snapshot = {
-        status: 'error' as const,
+        status: 'stopped' as const,
         message: error instanceof Error ? error.message : String(error),
         updatedAt: now(),
       };
@@ -171,7 +157,7 @@ export class ToolRuntimeManager {
 
   async ensureReady(toolId: ToolId, config: ToolConfigFile['tools'][ToolId]): Promise<ToolRuntimeSnapshot> {
     const current = await this.check(toolId, config);
-    if (current.status === 'ready' || config.runtimeMode !== 'managed') {
+    if (current.status === 'ready') {
       return current;
     }
 
@@ -198,52 +184,83 @@ export class ToolRuntimeManager {
 
     const webConfig = config as WebSearchToolSettings;
     const runtime = this.getRuntime(toolId);
-    if (runtime.backendProcess && runtime.backendProcess.exitCode === null && runtime.sidecarProcess && runtime.sidecarProcess.exitCode === null) {
+    const backendRunning = runtime.backendProcess && runtime.backendProcess.exitCode === null;
+    const sidecarRunning = runtime.sidecarProcess && runtime.sidecarProcess.exitCode === null;
+    if (config.runtimeMode === 'local' && backendRunning && sidecarRunning) {
       return this.check(toolId, config);
+    }
+
+    if (config.runtimeMode === 'external' && sidecarRunning) {
+      return this.check(toolId, config);
+    }
+
+    if (sidecarRunning || backendRunning) {
+      runtime.sidecarProcess?.kill();
+      runtime.backendProcess?.kill();
+      runtime.sidecarProcess = null;
+      runtime.backendProcess = null;
     }
 
     this.setSnapshot(toolId, {
       status: 'starting',
-      message: 'Starting managed search backend and sidecar...',
+      message:
+        config.runtimeMode === 'local'
+          ? 'Starting local search backend and interface...'
+          : 'Starting external search interface...',
     });
 
-    const backend = spawn(
-      process.execPath,
-      [
-        join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
-        join(process.cwd(), 'packages', 'server', 'src', 'sidecars', 'searchBackend.ts'),
-      ],
-      {
-        cwd: this.projectRoot,
-        env: {
-          ...process.env,
-          SEARCH_BACKEND_PORT: String(webConfig.backend.port),
-          SEARCH_REMOTE_BASE_URL: webConfig.upstream.remoteBaseURL,
+    if (config.runtimeMode === 'external' && !webConfig.externalBaseURL.trim()) {
+      const snapshot = {
+        status: 'error' as const,
+        message: 'External search mode requires an External Base URL.',
+        updatedAt: now(),
+      };
+      this.setSnapshot(toolId, snapshot);
+      return snapshot;
+    }
+
+    let backend: ChildProcess | null = null;
+    if (config.runtimeMode === 'local') {
+      backend = spawn(
+        process.execPath,
+        [
+          join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+          join(process.cwd(), 'packages', 'server', 'src', 'sidecars', 'searchBackend.ts'),
+        ],
+        {
+          cwd: this.projectRoot,
+          env: {
+            ...process.env,
+            SEARCH_BACKEND_PORT: String(webConfig.backend.port),
+            SEARCH_LOCAL_PROVIDER: webConfig.localProvider,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
         },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
+      );
 
-    runtime.backendProcess = backend;
-    backend.stdout.on('data', () => {});
-    backend.stderr.on('data', () => {});
-    backend.once('exit', (code, signal) => {
-      this.setSnapshot(toolId, {
-        status: 'stopped',
-        message: `Search backend exited${code !== null ? ` with code ${code}` : ''}${signal ? ` (${signal})` : ''}.`,
+      runtime.backendProcess = backend;
+      backend.stdout?.on('data', () => {});
+      backend.stderr?.on('data', () => {});
+      backend.once('exit', (code, signal) => {
+        this.setSnapshot(toolId, {
+          status: 'stopped',
+          message: `Local search backend exited${code !== null ? ` with code ${code}` : ''}${signal ? ` (${signal})` : ''}.`,
+        });
+        runtime.backendProcess = null;
       });
-      runtime.backendProcess = null;
-    });
+    }
 
     let sidecar: ChildProcess | null = null;
 
     try {
-      await Promise.race([
-        this.waitUntilReady(webConfig.backend.port, 4000, 'backend'),
-        once(backend, 'error').then(([error]) => {
-          throw error;
-        }),
-      ]);
+      if (config.runtimeMode === 'local' && backend) {
+        await Promise.race([
+          this.waitUntilReady(webConfig.backend.port, 4000, 'backend'),
+          once(backend, 'error').then(([error]) => {
+            throw error;
+          }),
+        ]);
+      }
 
       sidecar = spawn(
         process.execPath,
@@ -256,7 +273,10 @@ export class ToolRuntimeManager {
           env: {
             ...process.env,
             SEARCH_SIDECAR_PORT: String(webConfig.sidecar.port),
-            SEARCH_BACKEND_URL: `http://127.0.0.1:${webConfig.backend.port}`,
+            SEARCH_RUNTIME_MODE: config.runtimeMode,
+            SEARCH_BACKEND_URL:
+              config.runtimeMode === 'local' ? `http://127.0.0.1:${webConfig.backend.port}` : '',
+            SEARCH_EXTERNAL_BASE_URL: config.runtimeMode === 'external' ? webConfig.externalBaseURL : '',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         },
@@ -282,7 +302,7 @@ export class ToolRuntimeManager {
 
       return this.check(toolId, config);
     } catch (error: unknown) {
-      backend.kill();
+      backend?.kill();
       sidecar?.kill();
       const snapshot = {
         status: 'error' as const,
@@ -322,7 +342,7 @@ export class ToolRuntimeManager {
     runtime.backendProcess = null;
     const snapshot = {
       status: 'stopped' as const,
-      message: 'Managed search stack stopped.',
+      message: config.runtimeMode === 'local' ? 'Local search stack stopped.' : 'External search interface stopped.',
       updatedAt: now(),
     };
     this.setSnapshot(toolId, snapshot);

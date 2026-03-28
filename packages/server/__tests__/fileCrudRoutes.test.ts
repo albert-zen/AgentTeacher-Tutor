@@ -89,13 +89,13 @@ describe('Tool manager routes', () => {
     const put = await request(app).put('/api/tools/web_search').send({
       enabledByDefault: true,
       runtimeMode: 'external',
-      upstream: { remoteBaseURL: 'http://localhost:9999' },
+      externalBaseURL: 'http://localhost:9999',
       defaultMaxResults: 7,
       timeoutMs: 9000,
     });
     expect(put.status).toBe(200);
     expect(put.body.globalConfig.tools.web_search.enabledByDefault).toBe(true);
-    expect(put.body.globalConfig.tools.web_search.upstream.remoteBaseURL).toBe('http://localhost:9999');
+    expect(put.body.globalConfig.tools.web_search.externalBaseURL).toBe('http://localhost:9999');
 
     const get = await request(app).get('/api/tools');
     expect(get.body.globalConfig.tools.web_search.enabledByDefault).toBe(true);

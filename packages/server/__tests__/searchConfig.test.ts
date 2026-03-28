@@ -40,9 +40,32 @@ describe('toolConfig', () => {
     const config = loadToolConfig(tempDir);
 
     expect(config.tools.web_search.enabledByDefault).toBe(true);
-    expect(config.tools.web_search.upstream.remoteBaseURL).toBe('http://legacy-search.local');
+    expect(config.tools.web_search.runtimeMode).toBe('external');
+    expect(config.tools.web_search.externalBaseURL).toBe('http://legacy-search.local');
     expect(config.tools.web_search.defaultMaxResults).toBe(7);
     expect(config.tools.web_search.timeoutMs).toBe(5000);
+  });
+
+  it('normalizes legacy managed tool-config.json into local mode', () => {
+    writeFileSync(
+      join(tempDir, 'tool-config.json'),
+      JSON.stringify({
+        version: 1,
+        tools: {
+          ...defaultToolConfig.tools,
+          web_search: {
+            ...defaultToolConfig.tools.web_search,
+            runtimeMode: 'managed',
+            upstream: { provider: 'searxng', remoteBaseURL: 'http://old.local' },
+          },
+        },
+      }),
+    );
+
+    const config = loadToolConfig(tempDir);
+
+    expect(config.tools.web_search.runtimeMode).toBe('local');
+    expect(config.tools.web_search.externalBaseURL).toBe('http://old.local');
   });
 
   it('applies session tool overrides on top of global defaults', () => {

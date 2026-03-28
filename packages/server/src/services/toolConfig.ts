@@ -12,17 +12,15 @@ export interface ReadWriteToolSettings extends BaseToolSettings {
 }
 
 export interface WebSearchToolSettings extends BaseToolSettings {
-  runtimeMode: 'managed' | 'external';
+  runtimeMode: 'local' | 'external';
+  localProvider: 'duckduckgo';
   sidecar: {
     port: number;
   };
   backend: {
     port: number;
   };
-  upstream: {
-    provider: 'searxng';
-    remoteBaseURL: string;
-  };
+  externalBaseURL: string;
   timeoutMs: number;
   defaultMaxResults: number;
   allowedCategories: string[];
@@ -66,17 +64,15 @@ export const defaultToolConfig: ToolConfigFile = {
     },
     web_search: {
       enabledByDefault: false,
-      runtimeMode: 'managed',
+      runtimeMode: 'local',
+      localProvider: 'duckduckgo',
       sidecar: {
         port: 18080,
       },
       backend: {
         port: 18081,
       },
-      upstream: {
-        provider: 'searxng',
-        remoteBaseURL: 'http://127.0.0.1:8080',
-      },
+      externalBaseURL: 'http://127.0.0.1:8080',
       timeoutMs: 8000,
       defaultMaxResults: 5,
       allowedCategories: ['general', 'it', 'science', 'news'],
@@ -161,10 +157,8 @@ function migrateLegacySearchConfig(dataDir: string): Partial<ToolConfigFile> | n
       web_search: {
         ...defaultToolConfig.tools.web_search,
         enabledByDefault: legacy.enabled ?? defaultToolConfig.tools.web_search.enabledByDefault,
-        upstream: {
-          provider: legacy.provider ?? defaultToolConfig.tools.web_search.upstream.provider,
-          remoteBaseURL: legacy.baseURL ?? defaultToolConfig.tools.web_search.upstream.remoteBaseURL,
-        },
+        runtimeMode: legacy.baseURL ? 'external' : defaultToolConfig.tools.web_search.runtimeMode,
+        externalBaseURL: legacy.baseURL ?? defaultToolConfig.tools.web_search.externalBaseURL,
         defaultMaxResults: legacy.defaultMaxResults ?? defaultToolConfig.tools.web_search.defaultMaxResults,
         timeoutMs: legacy.timeoutMs ?? defaultToolConfig.tools.web_search.timeoutMs,
         allowedCategories: legacy.allowedCategories ?? defaultToolConfig.tools.web_search.allowedCategories,
@@ -176,14 +170,49 @@ function migrateLegacySearchConfig(dataDir: string): Partial<ToolConfigFile> | n
   };
 }
 
+function normalizeToolConfig(config: ToolConfigFile): ToolConfigFile {
+  const webRaw = config.tools.web_search as WebSearchToolSettings & {
+    upstream?: { provider?: 'searxng'; remoteBaseURL?: string };
+    runtimeMode?: 'managed' | 'local' | 'external';
+  };
+  const legacyRuntimeMode = (webRaw as { runtimeMode?: 'managed' | 'local' | 'external' }).runtimeMode;
+
+  return {
+    ...config,
+    tools: {
+      ...config.tools,
+      web_search: {
+        ...defaultToolConfig.tools.web_search,
+        ...webRaw,
+        runtimeMode: legacyRuntimeMode === 'managed' ? 'local' : (legacyRuntimeMode ?? defaultToolConfig.tools.web_search.runtimeMode),
+        localProvider: webRaw.localProvider ?? defaultToolConfig.tools.web_search.localProvider,
+        sidecar: {
+          ...defaultToolConfig.tools.web_search.sidecar,
+          ...(webRaw.sidecar ?? {}),
+        },
+        backend: {
+          ...defaultToolConfig.tools.web_search.backend,
+          ...(webRaw.backend ?? {}),
+        },
+        externalBaseURL:
+          webRaw.upstream?.remoteBaseURL ??
+          webRaw.externalBaseURL ??
+          defaultToolConfig.tools.web_search.externalBaseURL,
+        allowedCategories: webRaw.allowedCategories ?? defaultToolConfig.tools.web_search.allowedCategories,
+        allowedEngines: webRaw.allowedEngines ?? defaultToolConfig.tools.web_search.allowedEngines,
+      },
+    },
+  };
+}
+
 export function loadToolConfig(dataDir: string): ToolConfigFile {
   const current = readJson<Partial<ToolConfigFile>>(toolConfigPath(dataDir));
   const legacy = migrateLegacySearchConfig(dataDir);
-  return deepMerge(defaultToolConfig, current ?? legacy ?? {});
+  return normalizeToolConfig(deepMerge(defaultToolConfig, current ?? legacy ?? {}));
 }
 
 export function saveToolConfig(dataDir: string, config: Partial<ToolConfigFile>): ToolConfigFile {
-  const next = deepMerge(loadToolConfig(dataDir), config);
+  const next = normalizeToolConfig(deepMerge(loadToolConfig(dataDir), config));
   writeJson(toolConfigPath(dataDir), next);
   return next;
 }
@@ -201,8 +230,9 @@ export function updateToolConfig(
       [toolId]: deepMerge(current.tools[toolId], patch),
     },
   } as ToolConfigFile;
-  writeJson(toolConfigPath(dataDir), next);
-  return next;
+  const normalized = normalizeToolConfig(next);
+  writeJson(toolConfigPath(dataDir), normalized);
+  return normalized;
 }
 
 export function loadSessionContextConfig(dataDir: string, sessionId: string): SessionContextConfig {

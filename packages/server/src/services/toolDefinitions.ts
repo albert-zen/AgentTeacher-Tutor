@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 export type ToolId = 'read_file' | 'write_file' | 'web_search' | 'browser';
-export type ToolRuntimeMode = 'builtin' | 'managed' | 'external';
+export type ToolRuntimeMode = 'builtin' | 'local' | 'managed' | 'external';
 export type ToolRuntimeStatus = 'disabled' | 'stopped' | 'starting' | 'ready' | 'error';
 
 export interface ToolDefinition {
@@ -51,7 +51,7 @@ const defaultDefinitionFiles: Record<ToolId, ToolDefinitionFile> = {
     exposeToModel: true,
     uiVisible: true,
     hasRuntime: true,
-    supportedRuntimeModes: ['managed', 'external'],
+    supportedRuntimeModes: ['local', 'external'],
   },
   browser: {
     id: 'browser',
@@ -134,7 +134,10 @@ export function loadToolDefinitions(dataDir: string): Record<ToolId, ToolDefinit
       exposeToModel: parsed.exposeToModel ?? fallback.exposeToModel,
       uiVisible: parsed.uiVisible ?? fallback.uiVisible,
       hasRuntime: parsed.hasRuntime ?? fallback.hasRuntime,
-      supportedRuntimeModes: parsed.supportedRuntimeModes ?? fallback.supportedRuntimeModes,
+      supportedRuntimeModes:
+        (parsed.supportedRuntimeModes ?? fallback.supportedRuntimeModes).map((mode) =>
+          toolId === 'web_search' && mode === 'managed' ? 'local' : mode,
+        ) as ToolRuntimeMode[],
     };
   }
   return definitions;

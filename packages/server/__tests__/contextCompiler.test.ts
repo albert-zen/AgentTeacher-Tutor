@@ -30,10 +30,11 @@ function emptyToolContext(): ToolContext {
         write_file: { enabledByDefault: true, runtimeMode: 'builtin' },
         web_search: {
           enabledByDefault: false,
-          runtimeMode: 'managed',
+          runtimeMode: 'local',
+          localProvider: 'duckduckgo',
           sidecar: { port: 18080 },
           backend: { port: 18081 },
-          upstream: { provider: 'searxng', remoteBaseURL: 'http://127.0.0.1:8080' },
+          externalBaseURL: 'http://127.0.0.1:8080',
           timeoutMs: 8000,
           defaultMaxResults: 5,
           allowedCategories: ['general', 'it', 'science', 'news'],

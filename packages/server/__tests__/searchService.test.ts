@@ -48,27 +48,23 @@ describe('searchService', () => {
     updateToolConfig(tempDir, 'web_search', {
       enabledByDefault: false,
       runtimeMode: 'external',
-      upstream: { provider: 'searxng', remoteBaseURL: 'http://search.local' },
+      externalBaseURL: 'http://search.local',
       defaultMaxResults: 5,
+      sidecar: { port: 19080 },
     });
     updateSessionToolOverride(tempDir, 'session-1', 'web_search', { enabled: true });
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
+        provider: 'searxng',
         results: [
           {
             title: 'React Compiler',
             url: 'https://react.dev/compiler',
-            content: 'Official docs',
-            engine: 'duckduckgo',
-            publishedDate: '2026-03-26T00:00:00Z',
-          },
-          {
-            title: 'React Compiler',
-            url: 'https://react.dev/compiler',
-            content: 'Duplicate',
-            engine: 'google',
+            snippet: 'Official docs',
+            source: 'duckduckgo',
+            publishedAt: '2026-03-26T00:00:00Z',
           },
         ],
       }),
@@ -77,10 +73,12 @@ describe('searchService', () => {
 
     const result = await searchWeb(tempDir, 'session-1', { query: 'react compiler latest docs' });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      'http://search.local/search?q=react+compiler+latest+docs&format=json&categories=general',
+    expect(runtimeManager.ensureReady).toHaveBeenCalledWith(
+      'web_search',
+      expect.objectContaining({ runtimeMode: 'external', externalBaseURL: 'http://search.local' }),
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('http://127.0.0.1:19080/search');
     expect(result.success).toBe(true);
     expect(result.data?.provider).toBe('searxng');
     expect(result.data?.results).toEqual([
@@ -94,10 +92,10 @@ describe('searchService', () => {
     ]);
   });
 
-  it('uses the managed sidecar and lazy-start readiness check when configured', async () => {
+  it('uses the local sidecar and lazy-start readiness check when configured', async () => {
     updateToolConfig(tempDir, 'web_search', {
       enabledByDefault: true,
-      runtimeMode: 'managed',
+      runtimeMode: 'local',
       sidecar: { port: 18081 },
       backend: { port: 18082 },
     });
@@ -115,16 +113,16 @@ describe('searchService', () => {
 
     expect(runtimeManager.ensureReady).toHaveBeenCalledWith(
       'web_search',
-      expect.objectContaining({ runtimeMode: 'managed' }),
+      expect.objectContaining({ runtimeMode: 'local' }),
     );
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe('http://127.0.0.1:18081/search');
     expect(result.success).toBe(true);
   });
 
-  it('returns the runtime error when the managed sidecar cannot be started', async () => {
+  it('returns the runtime error when the local sidecar cannot be started', async () => {
     updateToolConfig(tempDir, 'web_search', {
       enabledByDefault: true,
-      runtimeMode: 'managed',
+      runtimeMode: 'local',
     });
     runtimeManager.ensureReady.mockResolvedValue({
       status: 'error',
@@ -136,5 +134,17 @@ describe('searchService', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('not ready');
+  });
+
+  it('rejects custom engines in local mode', async () => {
+    updateToolConfig(tempDir, 'web_search', {
+      enabledByDefault: true,
+      runtimeMode: 'local',
+    });
+
+    const result = await searchWeb(tempDir, 'session-1', { query: 'OpenClaw', engines: ['google'] });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('does not support custom engines');
   });
 });

@@ -52,15 +52,16 @@ function makeToolsResponse() {
         enabled: true,
         exposeToModel: true,
         uiVisible: true,
-        runtimeMode: 'managed',
+        runtimeMode: 'local',
         status: 'stopped',
         message: 'Sidecar unavailable: ECONNREFUSED',
         config: {
           enabledByDefault: true,
-          runtimeMode: 'managed',
+          runtimeMode: 'local',
+          localProvider: 'duckduckgo',
           sidecar: { port: 18080 },
           backend: { port: 18081 },
-          upstream: { provider: 'searxng', remoteBaseURL: 'http://127.0.0.1:8080' },
+          externalBaseURL: 'http://127.0.0.1:8080',
           timeoutMs: 8000,
           defaultMaxResults: 5,
           allowedCategories: ['general', 'it', 'science', 'news'],
@@ -77,10 +78,11 @@ function makeToolsResponse() {
         write_file: { enabledByDefault: true, runtimeMode: 'builtin' as const },
         web_search: {
           enabledByDefault: true,
-          runtimeMode: 'managed' as const,
+          runtimeMode: 'local' as const,
+          localProvider: 'duckduckgo' as const,
           sidecar: { port: 18080 },
           backend: { port: 18081 },
-          upstream: { provider: 'searxng' as const, remoteBaseURL: 'http://127.0.0.1:8080' },
+          externalBaseURL: 'http://127.0.0.1:8080',
           timeoutMs: 8000,
           defaultMaxResults: 5,
           allowedCategories: ['general', 'it', 'science', 'news'],
@@ -118,7 +120,8 @@ describe('Tools modals', () => {
 
     expect(await screen.findByText('联网搜索')).toBeTruthy();
     expect(screen.getByText('Sidecar unavailable: ECONNREFUSED')).toBeTruthy();
-    expect(screen.getByDisplayValue('managed').tagName).toBe('SELECT');
+    expect(screen.getByRole('combobox').tagName).toBe('SELECT');
+    expect(screen.getByText('搜索服务端口')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '检查' }));
     expect(mockRunToolRuntimeAction).toHaveBeenCalledWith('web_search', 'check');

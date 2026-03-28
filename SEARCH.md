@@ -7,7 +7,7 @@ This branch upgrades the old standalone search configuration into a unified Tool
 - Global tool config: `data/tool-config.json`
 - Session tool overrides: `data/<sessionId>/context-config.json`
 - Tool metadata and prompt fragments: `data/tools/<toolId>.json` and `data/tools/<toolId>.md`
-- Managed local `web_search` sidecar with lazy start
+- Managed `web_search` runtime with lazy start
 
 The v1 Tool Manager actively manages three tools:
 
@@ -25,8 +25,8 @@ The v1 Tool Manager actively manages three tools:
   - `<tool_instructions>`
 - Disabled tools are removed from both prompt injection and runtime tool registration.
 - `web_search` can run in:
-  - `managed` mode: use the local sidecar on `127.0.0.1:<port>`
-  - `external` mode: call the upstream search provider directly
+  - `local` mode: start a local search backend plus the tool-facing interface sidecar
+  - `external` mode: start only the tool-facing interface sidecar and have it call a remote SearXNG-compatible endpoint
 
 ## Default Web Search Runtime
 
@@ -35,17 +35,15 @@ By default, `web_search` is configured as:
 ```json
 {
   "enabledByDefault": false,
-  "runtimeMode": "managed",
+  "runtimeMode": "local",
+  "localProvider": "duckduckgo",
   "sidecar": {
     "port": 18080
   },
   "backend": {
     "port": 18081
   },
-  "upstream": {
-    "provider": "searxng",
-    "remoteBaseURL": "http://127.0.0.1:8080"
-  },
+  "externalBaseURL": "http://127.0.0.1:8080",
   "timeoutMs": 8000,
   "defaultMaxResults": 5,
   "allowedCategories": ["general", "it", "science", "news"],
@@ -54,7 +52,10 @@ By default, `web_search` is configured as:
 }
 ```
 
-In `managed` mode, the local backend and sidecar are started lazily on first actual `web_search` execution.
+In `local` mode, the backend and sidecar are started lazily on first actual `web_search` execution.
+
+- Backend: local search service, currently backed by DuckDuckGo HTML search
+- Sidecar: the stable interface layer used by the Teacher tool
 
 The backend exposes:
 
@@ -66,11 +67,23 @@ The sidecar exposes:
 - `GET /health`
 - `POST /search`
 
-The backend owns remote provider access, while the sidecar remains the tool-facing adapter. Tool Manager now supervises both processes so the app can report whether the managed search stack is actually ready.
+In `external` mode, only the sidecar is started. The sidecar then calls `externalBaseURL` for live search results.
+
+Tool Manager now supervises:
+
+- local mode: backend + sidecar
+- external mode: sidecar only
+
+This means the UI maps to the product semantics directly:
+
+- choosing local means “start my local search stack”
+- choosing external means “only start the adapter layer and connect it to an existing remote search endpoint”
 
 ## Migration Notes
 
 - Old `data/search-config.json` values are migrated into `tool-config.json.tools.web_search` when read.
+- Older `managed` runtime values are normalized to `local`.
+- Older `upstream.remoteBaseURL` values are normalized to `externalBaseURL`.
 - Legacy `/api/search-config` endpoints still work as compatibility aliases, but the new UI uses `/api/tools` and `/api/session/:id/tools`.
 
 ## Persistence Notes

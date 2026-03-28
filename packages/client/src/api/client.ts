@@ -204,7 +204,7 @@ export interface LLMStatus {
 }
 
 export type ToolId = 'read_file' | 'write_file' | 'web_search' | 'browser';
-export type ToolRuntimeMode = 'builtin' | 'managed' | 'external';
+export type ToolRuntimeMode = 'builtin' | 'local' | 'managed' | 'external';
 export type ToolRuntimeStatus = 'disabled' | 'stopped' | 'starting' | 'ready' | 'error';
 
 export interface BuiltinToolConfig {
@@ -214,17 +214,15 @@ export interface BuiltinToolConfig {
 
 export interface WebSearchToolConfig {
   enabledByDefault: boolean;
-  runtimeMode: 'managed' | 'external';
+  runtimeMode: 'local' | 'external';
+  localProvider: 'duckduckgo';
   sidecar: {
     port: number;
   };
   backend: {
     port: number;
   };
-  upstream: {
-    provider: 'searxng';
-    remoteBaseURL: string;
-  };
+  externalBaseURL: string;
   timeoutMs: number;
   defaultMaxResults: number;
   allowedCategories: string[];

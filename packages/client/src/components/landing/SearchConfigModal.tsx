@@ -107,8 +107,8 @@ export default function SearchConfigModal({ open, onClose }: Props) {
                 <RuntimeBadge status={tool.status} />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs text-zinc-500">
-                <div>模式：{tool.runtimeMode}</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-zinc-500">
+                <div>模式：{tool.runtimeMode === 'local' ? '本地' : tool.runtimeMode}</div>
                 <div>模型可见：{tool.exposeToModel ? '是' : '否'}</div>
               </div>
 
@@ -132,18 +132,18 @@ export default function SearchConfigModal({ open, onClose }: Props) {
                 <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
                   <div className="grid grid-cols-2 gap-2">
                     <SelectField
-                      label="Runtime Mode"
+                      label="模式"
                       value={searchDraft.runtimeMode}
                       options={[
-                        { value: 'managed', label: 'managed' },
-                        { value: 'external', label: 'external' },
+                        { value: 'local', label: 'local / 本地' },
+                        { value: 'external', label: 'external / 外部' },
                       ]}
                       onChange={(value) =>
                         setSearchDraft((prev) => (prev ? { ...prev, runtimeMode: value as WebSearchToolConfig['runtimeMode'] } : prev))
                       }
                     />
                     <FormField
-                      label="Sidecar Port"
+                      label="接口端口"
                       value={String(searchDraft.sidecar.port)}
                       onChange={(value) =>
                         setSearchDraft((prev) =>
@@ -152,25 +152,28 @@ export default function SearchConfigModal({ open, onClose }: Props) {
                       }
                       type="number"
                     />
-                    <FormField
-                      label="Backend Port"
-                      value={String(searchDraft.backend.port)}
-                      onChange={(value) =>
-                        setSearchDraft((prev) =>
-                          prev ? { ...prev, backend: { port: Number(value || 0) } } : prev,
-                        )
-                      }
-                      type="number"
-                    />
-                    <FormField
-                      label="Remote Base URL"
-                      value={searchDraft.upstream.remoteBaseURL}
-                      onChange={(value) =>
-                        setSearchDraft((prev) =>
-                          prev ? { ...prev, upstream: { ...prev.upstream, remoteBaseURL: value } } : prev,
-                        )
-                      }
-                    />
+                    {searchDraft.runtimeMode === 'local' ? (
+                      <FormField
+                        label="搜索服务端口"
+                        value={String(searchDraft.backend.port)}
+                        onChange={(value) =>
+                          setSearchDraft((prev) =>
+                            prev ? { ...prev, backend: { port: Number(value || 0) } } : prev,
+                          )
+                        }
+                        type="number"
+                      />
+                    ) : (
+                      <FormField
+                        label="External Base URL"
+                        value={searchDraft.externalBaseURL}
+                        onChange={(value) =>
+                          setSearchDraft((prev) =>
+                            prev ? { ...prev, externalBaseURL: value } : prev,
+                          )
+                        }
+                      />
+                    )}
                     <FormField
                       label="默认结果数"
                       value={String(searchDraft.defaultMaxResults)}
@@ -196,17 +199,17 @@ export default function SearchConfigModal({ open, onClose }: Props) {
                       label="检查"
                     />
                     <RuntimeButton
-                      disabled={busyToolId !== null || searchDraft.runtimeMode !== 'managed'}
+                      disabled={busyToolId !== null}
                       onClick={() => handleRuntimeAction('web_search', 'start')}
                       label="启动"
                     />
                     <RuntimeButton
-                      disabled={busyToolId !== null || searchDraft.runtimeMode !== 'managed'}
+                      disabled={busyToolId !== null}
                       onClick={() => handleRuntimeAction('web_search', 'restart')}
                       label="重启"
                     />
                     <RuntimeButton
-                      disabled={busyToolId !== null || searchDraft.runtimeMode !== 'managed'}
+                      disabled={busyToolId !== null}
                       onClick={() => handleRuntimeAction('web_search', 'stop')}
                       label="停止"
                     />

@@ -81,12 +81,12 @@ export default function SessionSearchConfigModal({ sessionId, open, onClose }: P
                 </label>
 
                 <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2">
-                  <span>
-                    <span className="block text-sm text-zinc-200">本 Session 启用</span>
-                    <span className="block text-xs text-zinc-500 mt-0.5">
-                      当前生效：{tool.enabled ? '已启用' : '已关闭'} / 模式：{tool.runtimeMode}
+                    <span>
+                      <span className="block text-sm text-zinc-200">本 Session 启用</span>
+                      <span className="block text-xs text-zinc-500 mt-0.5">
+                      当前生效：{tool.enabled ? '已启用' : '已关闭'} / 模式：{tool.runtimeMode === 'local' ? '本地' : tool.runtimeMode}
+                      </span>
                     </span>
-                  </span>
                   <input
                     type="checkbox"
                     checked={sessionEnabled}

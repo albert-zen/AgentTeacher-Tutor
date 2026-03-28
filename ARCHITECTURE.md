@@ -14,7 +14,7 @@ Teacher Agent Notebook — AI 教学工具。Teacher Agent 生成结构化学习
 | Server | Express 5 · Vercel AI SDK v6 · @ai-sdk/openai |
 | LLM | OpenAI-compatible API (DashScope / OpenAI / etc.)，运行时可切换 |
 | Storage | JSON files + Markdown files (no database) |
-| Testing | vitest · supertest · jsdom · @testing-library/react · 196 tests |
+| Testing | vitest · supertest · jsdom · @testing-library/react |
 | Monorepo | npm workspaces · TypeScript strict · ES2022 |
 
 ## System Overview
@@ -22,17 +22,21 @@ Teacher Agent Notebook — AI 教学工具。Teacher Agent 生成结构化学习
 ```mermaid
 graph TB
     subgraph Client ["Client (React + Vite)"]
-        LP[Landing Page<br/>sidebar + settings + draft]
-        WS[Workspace<br/>FileTree / Editor / Chat]
+        LP[LandingShell<br/>session draft + settings]
+        WS[WorkspaceShell<br/>FileTree / Editor / Chat]
         API[api/client.ts<br/>REST + SSE stream]
     end
 
     subgraph Server ["Server (Express)"]
-        SR[routes/session.ts<br/>Session CRUD + message pagination + context preview]
-        CR[routes/chat.ts<br/>SSE chat streaming]
-        FR[routes/files.ts<br/>File CRUD + Settings]
-        CC[services/contextCompiler.ts<br/>Context preview + compile pipeline]
-        LLM[services/llm.ts<br/>LLM client + tools + config]
+        SR[routes/session.ts<br/>Session CRUD + chat + memory preview]
+        FR[routes/files.ts<br/>File CRUD + draft/tool settings]
+        SDS[services/sessionDraftService.ts<br/>SessionDraft ↔ SessionContext]
+        CS[services/contextSections.ts<br/>Sections build + serialize]
+        CC[services/contextCompiler.ts<br/>compat facade]
+        TM[services/toolManager.ts<br/>tool visibility + prompt injection]
+        TR[services/toolRegistry.ts<br/>tool schema registry]
+        RT[services/toolRuntimeManager.ts<br/>managed runtimes]
+        LLM[services/llm.ts<br/>LLM client + registry tools]
         PP[services/profileParser.ts<br/>Profile block parsing]
         FS[services/fileService.ts<br/>Sandboxed file I/O]
         ST[db/index.ts<br/>JSON Store]
@@ -42,19 +46,23 @@ graph TB
         SJ[sessions.json]
         PM[profile.md]
         SP[system-prompt.md]
-        SPD[session-prompt-draft.md]
+        TD["session-draft/<br/>manifest.json + session-prompt.md"]
+        TC[tool-config.json]
         LC[llm-config.json]
-        SD["📁 {sessionId}/<br/>messages.json · guidance.md<br/>session-prompt.md · context-config.json<br/>milestones.md · ground-truth.md"]
+        SD["📁 {sessionId}/<br/>messages.json · guidance.md<br/>session-prompt.md · session-context.json<br/>milestones.md · ground-truth.md"]
     end
 
     LP & WS --> API
-    API -- "REST + SSE" --> SR & CR & FR
-    SR --> CC
-    CR --> CC --> LLM
-    CC --> PP
-    SR & CR & FR --> ST --> SJ
+    API -- "REST + SSE" --> SR & FR
+    FR --> SDS
+    SR --> SDS
+    SR --> CC --> CS
+    CC --> TM --> TR
+    TM --> RT
+    CS --> PP
+    SR & FR --> ST --> SJ
     FR --> FS
-    CR --> FS
+    SR --> FS
     FS --> SD
     LLM -- "streamText + tools" --> EXT["External LLM API"]
 ```
@@ -66,19 +74,23 @@ sequenceDiagram
     participant U as User
     participant C as Client
     participant S as Server
-    participant CC as ContextCompiler
+    participant SD as SessionDraft
+    participant CC as ContextSections
     participant L as LLM
     participant F as FileService
 
+    U->>C: Edit landing draft
+    C->>S: POST /api/session
+    S->>SD: materializeDraftToSession()
     U->>C: Send message + [file:1:10] refs
     C->>S: POST /session/:id/chat
-    S->>CC: compileContext(dataDir, store, sessionId, message)
+    S->>CC: buildSessionSections() + serializeSectionsForModel()
     CC->>F: Resolve file references
-    CC-->>S: system + messages + resolvedUserContent
+    CC-->>S: system + messages + enabledTools
     S->>L: streamText(system + messages + tools)
 
     loop Tool calls (max 10 steps)
-        L-->>S: tool-call (read_file / write_file)
+        L-->>S: tool-call (read_file / write_file / fetch_url / web_search)
         S->>F: Execute tool
         F-->>S: Result
         S-->>C: SSE: tool-call → tool-result
@@ -117,20 +129,23 @@ erDiagram
     }
 ```
 
-**Session 保持薄** — `{ id, concept, createdAt }` 三个字段，永不膨胀。消息历史分页读取，但底层仍保存在 `messages.json` 中；其余丰富度来自 session 目录下的文件：
+**Session 保持薄** — `{ id, concept, createdAt }` 三个字段，永不膨胀。Landing Page 的“下一次 Session”状态单独存在 `session-draft/`，已创建 Session 的丰富度来自 session 目录下的文件：
 
 ```
 data/
 ├── profile.md                  # 用户档案（按 # 标题分块）
 ├── system-prompt.md            # 全局系统提示词
-├── session-prompt-draft.md     # 教学指令草稿（新 session 自动复制）
+├── session-draft/
+│   ├── manifest.json           # 下一次新 Session 的上下文与工具选择
+│   └── session-prompt.md       # 下一次新 Session 的教学指令
+├── tool-config.json            # 全局工具 runtime/provider 配置
 ├── llm-config.json             # LLM 运行时配置（env fallback）
 ├── sessions.json               # session 索引
 │
 └── {sessionId}/
     ├── messages.json            # 聊天历史
     ├── session-prompt.md        # session 级教学指令（追加到 prompt）
-    ├── context-config.json      # 上下文选择配置
+    ├── session-context.json     # 已物化的上下文与工具选择快照
     ├── guidance.md              # Teacher 教学指南
     ├── ground-truth.md          # 知识文档
     ├── milestones.md            # 学习进度 (- [x] / - [ ])
@@ -158,8 +173,11 @@ data/
 | GET | `/api/session/:id/messages` | Load older chat history by cursor |
 | POST | `/api/session/:id/chat` | SSE streaming chat |
 | GET | `/api/session/:id/milestones` | Milestone progress |
-| GET | `/api/session/:id/context-preview` | Preview assembled context |
+| GET | `/api/context-preview/template` | Preview landing draft context |
+| GET | `/api/session/:id/context-memory` | Preview current session memory |
+| GET | `/api/session/:id/context-preview` | Legacy compatibility preview |
 | PUT | `/api/session/:id/context-config` | Save context selection config |
+| GET/PUT | `/api/session-draft` | Landing Page draft state |
 | GET | `/api/:sid/files` | List session files |
 | GET | `/api/:sid/file?path=` | Read file |
 | PUT | `/api/:sid/file` | Write file |
@@ -167,7 +185,9 @@ data/
 | GET/PUT | `/api/profile` | User profile |
 | GET | `/api/profile/blocks` | Parsed profile blocks |
 | GET/PUT | `/api/system-prompt` | Custom system prompt |
-| GET/PUT | `/api/session-prompt-draft` | Session prompt template |
+| GET/PUT | `/api/tools/:id` | Global tool runtime config |
+| POST | `/api/tools/:id/runtime/:action` | Tool runtime start/check/restart/stop |
+| GET/PUT | `/api/session/:id/tools` | Session-level tool visibility |
 | GET | `/api/llm-status` | LLM config status (read-only) |
 | PUT | `/api/llm-config` | Update LLM config at runtime |
 
@@ -175,31 +195,37 @@ data/
 
 ## Context Assembly (当前状态)
 
-`contextCompiler.ts` 现在同时承担两类职责：
+当前主线已经从“扁平 assemble + compile”收敛到 `ContextSection[]`：
 
-- `assembleContext()`：为 `/context-preview` 提供轻量上下文预览
-- `compileContext()`：完成聊天请求所需的 5 阶段编排流水线
+- `ContextSectionsService.buildDraftSections()`：Landing Page 的上下文预览
+- `ContextSectionsService.buildSessionSections()`：Session 内的模型记忆与真实注入源
+- `ContextSectionsService.serializeSectionsForModel()`：把 sections 序列化成模型 system string
+- `contextCompiler.ts`：只保留兼容 facade，方便旧接口和旧测试继续工作
 
 ```mermaid
 graph LR
-    subgraph Preview ["assembleContext()"]
-        P1["Resolve Sources<br/>system prompt + profile blocks"]
-        P2["Select Blocks<br/>context-config 过滤"]
+    subgraph Draft ["buildDraftSections()"]
+        D1["Resolve Draft<br/>session-draft + global files"]
+        D2["Emit Sections<br/>system / prompt / tools / profile"]
     end
 
-    subgraph Compile ["compileContext()"]
-        S1["1. Resolve Sources<br/>global + session prompt"]
-        S2["2. Select Blocks<br/>profile 分块 + 过滤"]
-        S3["3. Merge Refs<br/>解析 file:s:e 引用"]
-        S4["4. Format<br/>构建 system XML"]
-        S5["5. Build Messages<br/>拼接历史和当前用户消息"]
+    subgraph Session ["buildSessionSections()"]
+        S1["Resolve Session<br/>session-context + session prompt"]
+        S2["Select Profile<br/>inherit_all / explicit"]
+        S3["Append History<br/>message turns + parts"]
     end
 
-    P1 --> P2
-    S1 --> S2 --> S3 --> S4 --> S5
+    subgraph Compile ["serializeSectionsForModel() + buildMessages()"]
+        C1["Serialize Sections<br/>system / tool instructions"]
+        C2["Resolve Refs<br/>merge inline file refs"]
+        C3["Emit ModelMessage[]"]
+    end
+
+    D1 --> D2
+    S1 --> S2 --> S3 --> C1 --> C2 --> C3
 ```
 
-当前状态下，聊天上下文主流程已经从路由中提取到 `compileContext()`；后续仍可继续收敛 preview/compile 之间的重复逻辑。
+这让 draft preview、session memory 和真实模型注入共享同一套选择规则，不再分别维护三份逻辑。
 
 ---
 
@@ -215,14 +241,15 @@ Phase 1 — 基础编排 ✅
   ✅ Session 标题自动摘要
   ✅ 长聊天历史分页 + 虚拟列表
 
-Phase 2 — 可见的上下文 (next)
-  → 上下文预览面板 UI（模型看到了什么）
-  → Profile 块选择接入 context-config
-  → 跨 session 文件引用
+Phase 2 — 可见的上下文 ✅
+  ✅ 上下文预览面板 UI
+  ✅ Session 内模型记忆展示
+  ✅ Landing Draft 与 SessionContext 语义分离
+  ✅ Tool Manager 接入上下文编排
 
-Phase 3 — 完整编排
-  → Part Accumulator 共享提取
+Phase 3 — 完整编排 (next)
+  → 继续清理兼容层（旧 preview / context-config / search-config）
   → 聊天历史文件化 + Fork
   → 多模态输入（图片/视觉）
-  → Agent 联网搜索 → 结果归档为文件
+  → 更完整的可管理工具栈
 ```

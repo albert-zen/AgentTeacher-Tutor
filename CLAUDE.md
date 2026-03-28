@@ -28,7 +28,7 @@ npm run test:watch     # Vitest watch mode
 npm test -- --grep="pattern"  # Run specific test by name
 ```
 
-Tests live in `packages/server/__tests__/`. No client-side tests exist yet.
+Tests live in both `packages/server/__tests__/` and `packages/client/__tests__/`.
 
 ## Architecture
 
@@ -36,9 +36,14 @@ Tests live in `packages/server/__tests__/`. No client-side tests exist yet.
 
 ### Server (`packages/server/src/`)
 
-- **`routes/session.ts`** — All API routes. Single router factory `createSessionRouter(store, dataDir, llmConfig)`. Chat endpoint (`POST /:id/chat`) uses SSE streaming.
-- **`services/llm.ts`** — LLM integration via Vercel AI SDK's `streamText`. Defines `read_file`/`write_file` tools with Zod schemas. Uses `@ai-sdk/openai` with `.chat()` to force `/chat/completions` endpoint (required for OpenAI-compatible providers like DashScope).
-- **`services/teacher.ts`** — Tool execution layer. `executeToolCall()` dispatches tool calls to FileService.
+- **`routes/session.ts`** — Session CRUD, message pagination, SSE chat endpoint, context-memory preview.
+- **`routes/files.ts`** — File CRUD plus profile / prompt / tool / session-draft configuration endpoints.
+- **`services/sessionDraftService.ts`** — Landing Page `SessionDraft` persistence and `SessionDraft -> SessionContext` materialization.
+- **`services/contextSections.ts`** — Single source of truth for draft preview, session memory, and actual model injection sections.
+- **`services/contextCompiler.ts`** — Compatibility facade that now delegates compilation to `ContextSectionsService`.
+- **`services/toolRegistry.ts`** — Unified tool registry for UI metadata, prompt fragments, runtime capability, and LLM tool schemas.
+- **`services/toolRuntimeManager.ts`** — DataDir-scoped runtime manager for managed tools such as `web_search`.
+- **`services/llm.ts`** — LLM integration via Vercel AI SDK's `streamText`. Builds tools from the registry and uses `@ai-sdk/openai` with `.chat()` to force `/chat/completions`.
 - **`services/fileService.ts`** — Sandboxed file I/O. All paths resolved relative to a session's base directory with path traversal protection. Supports full-file and line-range read/write (1-based line numbers).
 - **`services/referenceParser.ts`** — Parses `[filename:startLine:endLine]` references from user messages.
 - **`services/milestonesParser.ts`** — Parses milestone checkbox format (`- [x]`/`- [ ]`) from milestones.md.
@@ -47,24 +52,30 @@ Tests live in `packages/server/__tests__/`. No client-side tests exist yet.
 
 ### Client (`packages/client/src/`)
 
-- **`App.tsx`** — Main layout. Landing page (concept input + session list) or three-panel workspace (FileTree | Editor+MilestoneBar | ChatPanel). Orchestrates file loading, selection tracking, and message sending.
+- **`App.tsx`** — Thin shell selector: chooses `LandingShell` or `WorkspaceShell`.
+- **`components/LandingShell.tsx`** — Landing-side orchestration for session draft editing and creation.
+- **`components/WorkspaceShell.tsx`** — Three-panel workspace orchestration and session-level modals.
 - **`hooks/useSession.ts`** — Core state hook. Manages session, messages, files, streaming state. Handles SSE stream consumption and auto-refreshes files after tool-result events.
+- **`hooks/useSessionDraft.ts`** — Landing draft state for `sessionPrompt`, `profileSelection`, and `enabledTools`.
 - **`hooks/useTextSelection.ts`** — Tracks text selection with line-number precision for file references.
 - **`api/client.ts`** — API client. REST calls + `streamChat()` which manually parses SSE via ReadableStream.
 
 ### Data Flow
 
-1. User sends message → `POST /session/:id/chat` with optional `[file:line:line]` references
-2. Server resolves references by reading files, appends content to user message
-3. `streamText()` calls LLM with system prompt + conversation history + tools
-4. LLM may invoke `read_file`/`write_file` tools (up to `stopWhen: stepCountIs(10)`)
-5. Server streams SSE events: `text-delta`, `tool-call`, `tool-result`, `done`
-6. Client refreshes file list on every `tool-result` event to reflect Teacher's file changes
-7. Tool events are accumulated during streaming and persisted on the assistant ChatMessage
+1. Landing Page edits a `SessionDraft` in `data/session-draft/`
+2. Creating a session materializes that draft into `data/{sessionId}/session-context.json` and `session-prompt.md`
+3. User sends message → `POST /session/:id/chat` with optional `[file:line:line]` references
+4. Server builds `ContextSection[]`, serializes them into the model system prompt, and builds conversation history
+5. `streamText()` calls the LLM with only the tools enabled in the session context
+6. Server streams SSE events: `text-delta`, `tool-call`, `tool-result`, `done`
+7. Client refreshes files on `tool-result`, persists assistant parts/tool events, and keeps preview/memory UI aligned with the same section model
 
 ### Key Conventions
 
 - Session files are stored in `data/{sessionId}/` — one directory per session
+- Landing Page draft state is stored in `data/session-draft/manifest.json` and `data/session-draft/session-prompt.md`
+- Session context selection is materialized into `data/{sessionId}/session-context.json`
+- `tool-config.json` is global infrastructure config only (runtime mode, ports, provider, timeout); tool visibility lives in draft/session manifests
 - The LLM uses an OpenAI-compatible API (configured via `.env`: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`)
 - The UI language is Chinese; system prompt instructs the Teacher to respond in the student's language
 - Vite proxies `/api` requests to `localhost:3001` in development
@@ -78,6 +89,6 @@ Tests live in `packages/server/__tests__/`. No client-side tests exist yet.
 
 - **TDD（测试驱动开发）**：先写测试，再写实现，确保每个功能有对应测试覆盖。服务端测试在 `packages/server/__tests__/`，使用 vitest
 - **全栈类型安全**：服务端 `types.ts` 定义的类型需与客户端 `api/client.ts` 的类型保持同步。接口变更必须同时更新两端类型，确保端到端 type-safe
-- **分支开发**：每个新功能从 `main` 新建 feature 分支（如 `feature/resize-panels`），开发完成后由用户审核再合入 main
+- **分支开发**：每个新功能从 `main` 新建 `codex/*` 分支，开发完成后由用户审核再合入 main
 - **小步提交**：每个有意义的变更单独提交，commit message 清晰描述变更内容。避免大型混合提交
 - **合入流程**：功能完成 → 运行 `npm test` 确保全部通过 → 两端 `tsc --noEmit` 无类型错误 → 用户审核 → 合入 main

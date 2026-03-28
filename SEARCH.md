@@ -1,101 +1,120 @@
-# Tool Manager And Managed Web Search
+# Tool Manager, Web Search, And Fetch URL
 
-This branch upgrades the old standalone search configuration into a unified Tool Manager.
+当前实现已经不是“单独的搜索配置页”，而是一个统一 Tool Manager 体系中的一部分。
 
-## What Gets Added
+## 当前模型
 
-- Global tool config: `data/tool-config.json`
-- Session tool overrides: `data/<sessionId>/context-config.json`
-- Tool metadata and prompt fragments: `data/tools/<toolId>.json` and `data/tools/<toolId>.md`
-- Managed `web_search` runtime with lazy start
+工具分成两层：
 
-The v1 Tool Manager actively manages three tools:
+- **SessionDraft / SessionContext**
+  控制“这个工具是否对模型可见、是否注入提示词”
+- **Global Tool Config**
+  控制“这个工具如何运行”，例如 runtime mode、端口、provider、超时
 
-- `read_file`
-- `write_file`
+因此：
+
+- Landing Page 选择的工具，会进入下一次新建 Session
+- 创建 Session 时，这份工具可见性会物化成 `data/{sessionId}/session-context.json`
+- 已创建 Session 不会被之后的 landing 变更回溯影响
+- `data/tool-config.json` 只负责基础设施，不负责“下一次 Session 默认启用哪些工具”
+
+## 当前工具
+
+当前 Tool Registry 中与外部信息相关的工具有：
+
 - `fetch_url`
 - `web_search`
 
-`browser` exists only as a reserved definition for future work and is not exposed in the UI or model tool registry yet.
+另外还有：
 
-## How It Works
+- `read_file`
+- `write_file`
+- `browser` 预留定义，暂不暴露给模型
 
-- Tool enablement is resolved as `global default + session override`.
-- Enabled tools are injected into the context compiler via:
-  - `<enabled_tools>`
-  - `<tool_instructions>`
-- Disabled tools are removed from both prompt injection and runtime tool registration.
-- `fetch_url` is a builtin tool that fetches a specific HTTP/HTTPS page and extracts readable content.
-- `web_search` can run in:
-  - `local` mode: start a local search backend plus the tool-facing interface sidecar
-  - `external` mode: start only the tool-facing interface sidecar and have it call a remote SearXNG-compatible endpoint
+## web_search
 
-The intended flow is:
+`web_search` 是受管工具，支持两种 runtime mode：
 
-- `web_search` finds candidate URLs
-- `fetch_url` pulls the actual page content for one specific URL
-- `write_file` persists useful notes or extracts back into session files
+- `local`
+- `external`
 
-## Default Web Search Runtime
+### local
 
-By default, `web_search` is configured as:
+Tool Manager 托管整套本地搜索栈：
 
-```json
-{
-  "enabledByDefault": false,
-  "runtimeMode": "local",
-  "localProvider": "duckduckgo",
-  "sidecar": {
-    "port": 18080
-  },
-  "backend": {
-    "port": 18081
-  },
-  "externalBaseURL": "http://127.0.0.1:8080",
-  "timeoutMs": 8000,
-  "defaultMaxResults": 5,
-  "allowedCategories": ["general", "it", "science", "news"],
-  "allowedEngines": [],
-  "persistResultsByDefault": false
-}
-```
+- backend
+- sidecar
 
-In `local` mode, the backend and sidecar are started lazily on first actual `web_search` execution.
+默认实现：
 
-- Backend: local search service, currently backed by DuckDuckGo HTML search
-- Sidecar: the stable interface layer used by the Teacher tool
+- 本地 provider：`duckduckgo`
+- backend 端口：`18081`
+- sidecar 端口：`18080`
 
-The backend exposes:
+行为：
 
-- `GET /health`
-- `POST /search`
+- 首次真正调用 `web_search` 时懒启动
+- Tool Manager 会检查 / 启动 / 重启 / 停止 runtime
+- UI 上会显示 runtime 状态而不是只显示抽象“已启用”
 
-The sidecar exposes:
+### external
 
-- `GET /health`
-- `POST /search`
+只启动工具接口层 sidecar，再去连接外部搜索端点。
 
-In `external` mode, only the sidecar is started. The sidecar then calls `externalBaseURL` for live search results.
+当前兼容目标是：
 
-Tool Manager now supervises:
+- SearXNG-compatible endpoint
 
-- local mode: backend + sidecar
-- external mode: sidecar only
+因此如果你已经有外部搜索服务，可以把 `externalBaseURL` 指过去。
 
-This means the UI maps to the product semantics directly:
+## fetch_url
 
-- choosing local means “start my local search stack”
-- choosing external means “only start the adapter layer and connect it to an existing remote search endpoint”
+`fetch_url` 已经是正式工具，不再是未来计划。
 
-## Migration Notes
+它的职责是：
 
-- Old `data/search-config.json` values are migrated into `tool-config.json.tools.web_search` when read.
-- Older `managed` runtime values are normalized to `local`.
-- Older `upstream.remoteBaseURL` values are normalized to `externalBaseURL`.
-- Legacy `/api/search-config` endpoints still work as compatibility aliases, but the new UI uses `/api/tools` and `/api/session/:id/tools`.
+- 接收一个具体 URL
+- 抓取网页
+- 提取更适合阅读的正文内容
+- 返回给 Teacher 用于总结、引用或后续写入文件
 
-## Persistence Notes
+推荐链路是：
 
-- Tool prompt fragments live in `data/tools/` so they stay editable and align with the app's “Everything is a file” direction.
-- Search findings are still persisted through `write_file` into `references/` or any other session file.
-- `fetch_url` is intentionally still out of scope for this branch.
+1. `web_search` 找候选结果
+2. `fetch_url` 读取其中 1 到 2 个高价值页面
+3. `write_file` 把有价值的摘要沉淀到 session 文件
+
+## 关键文件
+
+- `data/tool-config.json`
+  全局工具基础设施配置
+- `data/session-draft/manifest.json`
+  Landing Page 上下一次 Session 的默认启用工具
+- `data/{sessionId}/session-context.json`
+  某个已创建 Session 的工具可见性快照
+
+## 相关实现
+
+- `packages/server/src/services/toolRegistry.ts`
+  工具元数据、提示词片段、LLM schema
+- `packages/server/src/services/toolManager.ts`
+  工具可见性与 prompt 注入解析
+- `packages/server/src/services/toolRuntimeManager.ts`
+  runtime 状态、启动、停止、重启
+- `packages/server/src/services/searchService.ts`
+  `web_search` 调用入口
+- `packages/server/src/services/fetchUrlService.ts`
+  `fetch_url` 调用入口
+
+## 兼容说明
+
+旧的搜索配置和接口仍保留了一层兼容，但已经不是主路径：
+
+- 旧 `search-config.json` 会在读取时迁移
+- 旧 `/api/search-config` 仍可工作，但新 UI 使用的是 tools 相关接口
+
+如果要继续开发，优先以以下心智模型为准：
+
+- 工具可见性属于 `SessionDraft / SessionContext`
+- 工具 runtime 属于 `Global Tool Config`
+- preview、memory、真实模型注入都应与这套工具选择保持一致

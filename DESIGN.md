@@ -1,5 +1,7 @@
 # 上下文编排器 — 架构设计
 
+> 注：本文档保留了较早期的设计推演，适合作为思路来源阅读；当前已落地实现请优先以 `README.md`、`ARCHITECTURE.md` 与代码中的 `SessionDraft / SessionContext / ContextSection` 模型为准。
+
 > 本文档记录 Teacher Agent Notebook 向「上下文编排器」演进的设计共识。
 > 基于 2026-02 的架构讨论，作为后续实现的指导。
 

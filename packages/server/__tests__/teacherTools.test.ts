@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -12,11 +12,12 @@ let tools: ReturnType<typeof buildTools>;
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'teacher-tools-test-'));
   fileService = new FileService(tempDir);
-  tools = buildTools(fileService, tempDir, 'session-1', ['read_file', 'write_file']);
+  tools = buildTools(fileService, tempDir, 'session-1', ['read_file', 'write_file', 'fetch_url']);
 });
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
+  vi.unstubAllGlobals();
 });
 
 describe('tool 执行', () => {
@@ -73,6 +74,29 @@ describe('tool 执行', () => {
     const limitedTools = buildTools(fileService, tempDir, 'session-1', ['read_file']);
     expect(limitedTools.read_file).toBeDefined();
     expect('write_file' in limitedTools).toBe(false);
+    expect('fetch_url' in limitedTools).toBe(false);
     expect('web_search' in limitedTools).toBe(false);
+  });
+
+  it('fetch_url — 返回网页正文内容', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null),
+        },
+        text: async () => '<html><head><title>Doc</title></head><body><main>Alpha Beta</main></body></html>',
+      }),
+    );
+
+    const result = await tools.fetch_url.execute(
+      { url: 'https://example.com/doc' },
+      { toolCallId: 't6', messages: [], abortSignal: undefined as never },
+    );
+
+    expect(result.success).toBe(true);
+    expect((result as { data: { title?: string; content: string } }).data.title).toBe('Doc');
+    expect((result as { data: { title?: string; content: string } }).data.content).toContain('Alpha Beta');
   });
 });

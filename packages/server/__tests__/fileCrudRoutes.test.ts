@@ -81,7 +81,7 @@ describe('Tool manager routes', () => {
   it('GET /api/tools returns the visible tools and global config', async () => {
     const res = await request(app).get('/api/tools');
     expect(res.status).toBe(200);
-    expect(res.body.tools.map((tool: { id: string }) => tool.id)).toEqual(['read_file', 'write_file', 'web_search']);
+    expect(res.body.tools.map((tool: { id: string }) => tool.id)).toEqual(['read_file', 'write_file', 'fetch_url', 'web_search']);
     expect(res.body.globalConfig.tools.web_search.runtimeMode).toBeDefined();
   });
 

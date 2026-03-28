@@ -203,7 +203,7 @@ export interface LLMStatus {
   baseURL: string;
 }
 
-export type ToolId = 'read_file' | 'write_file' | 'web_search' | 'browser';
+export type ToolId = 'read_file' | 'write_file' | 'fetch_url' | 'web_search' | 'browser';
 export type ToolRuntimeMode = 'builtin' | 'local' | 'managed' | 'external';
 export type ToolRuntimeStatus = 'disabled' | 'stopped' | 'starting' | 'ready' | 'error';
 

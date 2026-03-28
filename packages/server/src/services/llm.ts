@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { FileService } from './fileService.js';
+import { fetchUrl } from './fetchUrlService.js';
 import { searchWeb } from './searchService.js';
 import type { ToolId } from './toolDefinitions.js';
 
@@ -99,6 +100,18 @@ export function buildTools(fileService: FileService, dataDir: string, sessionId:
           return { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       },
+          }),
+        }
+      : {}),
+    ...(enabledTools.includes('fetch_url')
+      ? {
+          fetch_url: tool({
+      description: 'Fetch and extract the readable content of a webpage URL.',
+      inputSchema: z.object({
+        url: z.string().url().describe('HTTP or HTTPS URL to fetch'),
+        maxChars: z.number().int().positive().max(40000).optional().describe('Optional maximum number of characters to keep'),
+      }),
+      execute: async (args) => fetchUrl(args),
           }),
         }
       : {}),

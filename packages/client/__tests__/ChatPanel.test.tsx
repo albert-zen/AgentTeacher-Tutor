@@ -273,4 +273,42 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('button', { name: /searching web/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /found 1 results/i })).toBeTruthy();
   });
+
+  it('renders friendly labels for fetch_url tool events', () => {
+    render(
+      <div style={{ height: 600 }}>
+        <ChatPanel
+          messages={[
+            {
+              id: '1',
+              role: 'assistant',
+              content: '',
+              parts: [
+                {
+                  type: 'tool-call',
+                  toolName: 'fetch_url',
+                  args: { url: 'https://example.com/doc' },
+                },
+                {
+                  type: 'tool-result',
+                  toolName: 'fetch_url',
+                  result: {
+                    success: true,
+                    data: { title: 'Example Doc', content: 'Alpha Beta' },
+                  },
+                },
+              ],
+            },
+          ]}
+          streaming={false}
+          streamingParts={[]}
+          copySource={copySource}
+          onSend={vi.fn()}
+        />
+      </div>,
+    );
+
+    expect(screen.getByText('Fetching page...')).toBeTruthy();
+    expect(screen.getByText('Fetched Example Doc')).toBeTruthy();
+  });
 });

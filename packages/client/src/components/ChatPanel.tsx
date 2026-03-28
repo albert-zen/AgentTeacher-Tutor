@@ -94,6 +94,7 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
   if (part.type === 'tool-call') {
     if (part.toolName === 'read_file') return `Reading ${path ?? 'file'}...`;
     if (part.toolName === 'write_file') return `Writing ${path ?? 'file'}...`;
+    if (part.toolName === 'fetch_url') return 'Fetching page...';
     if (part.toolName === 'web_search') return 'Searching web...';
     return `${part.toolName}...`;
   }
@@ -102,6 +103,15 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
     : undefined;
   if (part.toolName === 'read_file') return `Read ${resultPath ?? 'file'}`;
   if (part.toolName === 'write_file') return `Wrote ${resultPath ?? 'file'}`;
+  if (part.toolName === 'fetch_url') {
+    const success = ((part.result as Record<string, unknown>)?.success as boolean | undefined) ?? false;
+    if (!success) {
+      const error = (part.result as Record<string, unknown>)?.error as string | undefined;
+      return error ? `Fetch failed: ${error}` : 'Fetch failed';
+    }
+    const title = (((part.result as Record<string, unknown>)?.data as Record<string, unknown>)?.title as string | undefined) ?? 'page';
+    return `Fetched ${title}`;
+  }
   if (part.toolName === 'web_search') {
     const success = ((part.result as Record<string, unknown>)?.success as boolean | undefined) ?? false;
     const error = (part.result as Record<string, unknown>)?.error as string | undefined;

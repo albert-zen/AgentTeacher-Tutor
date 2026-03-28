@@ -37,6 +37,7 @@ export interface ToolConfigFile {
   tools: {
     read_file: ReadWriteToolSettings;
     write_file: ReadWriteToolSettings;
+    fetch_url: ReadWriteToolSettings;
     web_search: WebSearchToolSettings;
     browser: BrowserToolSettings;
   };
@@ -59,6 +60,10 @@ export const defaultToolConfig: ToolConfigFile = {
       runtimeMode: 'builtin',
     },
     write_file: {
+      enabledByDefault: true,
+      runtimeMode: 'builtin',
+    },
+    fetch_url: {
       enabledByDefault: true,
       runtimeMode: 'builtin',
     },

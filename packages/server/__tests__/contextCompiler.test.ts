@@ -28,6 +28,7 @@ function emptyToolContext(): ToolContext {
       tools: {
         read_file: { enabledByDefault: true, runtimeMode: 'builtin' },
         write_file: { enabledByDefault: true, runtimeMode: 'builtin' },
+        fetch_url: { enabledByDefault: true, runtimeMode: 'builtin' },
         web_search: {
           enabledByDefault: false,
           runtimeMode: 'local',

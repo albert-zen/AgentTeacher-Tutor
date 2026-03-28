@@ -13,6 +13,7 @@ The v1 Tool Manager actively manages three tools:
 
 - `read_file`
 - `write_file`
+- `fetch_url`
 - `web_search`
 
 `browser` exists only as a reserved definition for future work and is not exposed in the UI or model tool registry yet.
@@ -24,9 +25,16 @@ The v1 Tool Manager actively manages three tools:
   - `<enabled_tools>`
   - `<tool_instructions>`
 - Disabled tools are removed from both prompt injection and runtime tool registration.
+- `fetch_url` is a builtin tool that fetches a specific HTTP/HTTPS page and extracts readable content.
 - `web_search` can run in:
   - `local` mode: start a local search backend plus the tool-facing interface sidecar
   - `external` mode: start only the tool-facing interface sidecar and have it call a remote SearXNG-compatible endpoint
+
+The intended flow is:
+
+- `web_search` finds candidate URLs
+- `fetch_url` pulls the actual page content for one specific URL
+- `write_file` persists useful notes or extracts back into session files
 
 ## Default Web Search Runtime
 

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
-export type ToolId = 'read_file' | 'write_file' | 'web_search' | 'browser';
+export type ToolId = 'read_file' | 'write_file' | 'fetch_url' | 'web_search' | 'browser';
 export type ToolRuntimeMode = 'builtin' | 'local' | 'managed' | 'external';
 export type ToolRuntimeStatus = 'disabled' | 'stopped' | 'starting' | 'ready' | 'error';
 
@@ -44,6 +44,15 @@ const defaultDefinitionFiles: Record<ToolId, ToolDefinitionFile> = {
     hasRuntime: false,
     supportedRuntimeModes: ['builtin'],
   },
+  fetch_url: {
+    id: 'fetch_url',
+    label: '抓取网页',
+    description: '抓取指定 URL 的正文内容，供 Teacher 阅读和引用。',
+    exposeToModel: true,
+    uiVisible: true,
+    hasRuntime: false,
+    supportedRuntimeModes: ['builtin'],
+  },
   web_search: {
     id: 'web_search',
     label: '联网搜索',
@@ -74,6 +83,12 @@ const defaultPromptFragments: Record<ToolId, string> = {
     '## write_file',
     '- Use write_file to create or update learning materials inside the current session workspace.',
     '- Only modify files that help the student, and keep edits aligned with the current session context.',
+  ].join('\n'),
+  fetch_url: [
+    '## fetch_url',
+    '- Use fetch_url to read the content of a specific webpage after you already have a relevant URL.',
+    '- Prefer fetching one or two promising pages instead of pulling many URLs at once.',
+    '- Summarize and cite fetched pages carefully; if a page is useful for later, persist notes with write_file instead of repeatedly fetching it.',
   ].join('\n'),
   web_search: [
     '## web_search',

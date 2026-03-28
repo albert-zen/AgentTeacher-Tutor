@@ -1,6 +1,6 @@
 import type { Store } from '../db/index.js';
 import { contextSectionsService } from './contextSections.js';
-import { loadSessionContext, profileSelectionToLegacyBlockIds } from './sessionDraftService.js';
+import { loadSessionContext, profileSelectionToBlockIds } from './sessionDraftService.js';
 import { parseProfileBlocks, type ProfileBlock } from './profileParser.js';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
@@ -107,7 +107,7 @@ export function assembleContext(dataDir: string, sessionId: string, config?: Con
   const profileSelection =
     config?.profileBlockIds !== undefined
       ? config.profileBlockIds
-      : profileSelectionToLegacyBlockIds(loadSessionContext(dataDir, sessionId).profileSelection);
+      : profileSelectionToBlockIds(loadSessionContext(dataDir, sessionId).profileSelection);
   const selectedProfileBlocks =
     profileSelection === undefined
       ? profileBlocks
@@ -138,7 +138,7 @@ export function resolvePromptsSeparately(
 }
 
 export function selectProfileContent(dataDir: string, sessionId: string): string {
-  const selection = profileSelectionToLegacyBlockIds(loadSessionContext(dataDir, sessionId).profileSelection);
+  const selection = profileSelectionToBlockIds(loadSessionContext(dataDir, sessionId).profileSelection);
   const blocks = loadAllProfileBlocks(dataDir);
   const selected = selection === undefined ? blocks : blocks.filter((block) => selection.includes(block.id));
   return selected.map((block) => `## ${block.name}\n${block.content}`).join('\n\n');

@@ -26,11 +26,10 @@ function emptyToolContext(): ToolContext {
     globalConfig: {
       version: 1,
       tools: {
-        read_file: { enabledByDefault: true, runtimeMode: 'builtin' },
-        write_file: { enabledByDefault: true, runtimeMode: 'builtin' },
-        fetch_url: { enabledByDefault: true, runtimeMode: 'builtin' },
+        read_file: { runtimeMode: 'builtin' },
+        write_file: { runtimeMode: 'builtin' },
+        fetch_url: { runtimeMode: 'builtin' },
         web_search: {
-          enabledByDefault: false,
           runtimeMode: 'local',
           localProvider: 'duckduckgo',
           sidecar: { port: 18080 },
@@ -42,10 +41,20 @@ function emptyToolContext(): ToolContext {
           allowedEngines: [],
           persistResultsByDefault: false,
         },
-        browser: { enabledByDefault: false, runtimeMode: 'managed' },
+        browser: { runtimeMode: 'managed' },
       },
     },
-    sessionConfig: {},
+    source: {
+      kind: 'draft',
+      draft: {
+        manifest: {
+          version: 1,
+          profileSelection: { mode: 'inherit_all' },
+          enabledTools: ['read_file', 'write_file', 'fetch_url'],
+        },
+        sessionPrompt: '',
+      },
+    },
   };
 }
 
@@ -141,7 +150,7 @@ describe('resolvePromptsSeparately', () => {
 // ─── Stage 2: selectProfileContent ──────────────────────────────────────────
 
 describe('selectProfileContent', () => {
-  it('returns all blocks when no context-config.json', () => {
+  it('returns all blocks when no session-context.json exists yet', () => {
     writeFileSync(join(tempDir, 'profile.md'), '# Info\ndata\n# Goals\nlearn');
     mkdirSync(join(tempDir, 'sess1'), { recursive: true });
     const content = selectProfileContent(tempDir, 'sess1');
@@ -149,10 +158,13 @@ describe('selectProfileContent', () => {
     expect(content).toContain('Goals');
   });
 
-  it('filters blocks based on context-config.json', () => {
+  it('filters blocks based on session-context.json', () => {
     writeFileSync(join(tempDir, 'profile.md'), '# Info\ndata\n# Goals\nlearn');
     mkdirSync(join(tempDir, 'sess1'), { recursive: true });
-    writeFileSync(join(tempDir, 'sess1', 'context-config.json'), JSON.stringify({ profileBlockIds: ['Goals'] }));
+    writeFileSync(
+      join(tempDir, 'sess1', 'session-context.json'),
+      JSON.stringify({ version: 1, profileSelection: { mode: 'explicit', blockIds: ['Goals'] }, enabledTools: ['read_file', 'write_file', 'fetch_url'] }),
+    );
     const content = selectProfileContent(tempDir, 'sess1');
     expect(content).not.toContain('Info');
     expect(content).toContain('Goals');
@@ -161,7 +173,10 @@ describe('selectProfileContent', () => {
   it('treats an empty profileBlockIds array as selecting no blocks', () => {
     writeFileSync(join(tempDir, 'profile.md'), '# Info\ndata\n# Goals\nlearn');
     mkdirSync(join(tempDir, 'sess1'), { recursive: true });
-    writeFileSync(join(tempDir, 'sess1', 'context-config.json'), JSON.stringify({ profileBlockIds: [] }));
+    writeFileSync(
+      join(tempDir, 'sess1', 'session-context.json'),
+      JSON.stringify({ version: 1, profileSelection: { mode: 'explicit', blockIds: [] }, enabledTools: ['read_file', 'write_file', 'fetch_url'] }),
+    );
     const content = selectProfileContent(tempDir, 'sess1');
     expect(content).toBe('');
   });
@@ -171,10 +186,10 @@ describe('selectProfileContent', () => {
     expect(selectProfileContent(tempDir, 'sess1')).toBe('');
   });
 
-  it('ignores corrupted context-config.json', () => {
+  it('ignores corrupted session-context.json', () => {
     writeFileSync(join(tempDir, 'profile.md'), '# Info\ndata');
     mkdirSync(join(tempDir, 'sess1'), { recursive: true });
-    writeFileSync(join(tempDir, 'sess1', 'context-config.json'), 'not json');
+    writeFileSync(join(tempDir, 'sess1', 'session-context.json'), 'not json');
     const content = selectProfileContent(tempDir, 'sess1');
     expect(content).toContain('Info');
   });
@@ -326,8 +341,7 @@ describe('formatSystemMessage', () => {
           uiVisible: true,
           runtimeMode: 'builtin',
           status: 'ready',
-          config: { enabledByDefault: true, runtimeMode: 'builtin' },
-          sessionOverride: null,
+          config: { runtimeMode: 'builtin' },
         },
       ],
       promptFragments: [{ id: 'read_file', label: '读文件', content: 'Use read_file wisely.' }],
@@ -439,7 +453,10 @@ describe('compileContext integration', () => {
     writeFileSync(join(tempDir, 'system-prompt.md'), 'You are a tutor.');
     writeFileSync(join(tempDir, sessionId, 'session-prompt.md'), 'Focus on math.');
     writeFileSync(join(tempDir, 'profile.md'), '# Background\nCS student\n# Goals\nlearn calculus');
-    writeFileSync(join(tempDir, sessionId, 'context-config.json'), JSON.stringify({ profileBlockIds: ['Goals'] }));
+    writeFileSync(
+      join(tempDir, sessionId, 'session-context.json'),
+      JSON.stringify({ version: 1, profileSelection: { mode: 'explicit', blockIds: ['Goals'] }, enabledTools: ['read_file', 'write_file', 'fetch_url'] }),
+    );
     writeFileSync(join(tempDir, sessionId, 'notes.md'), 'line1\nline2\nline3\n');
 
     store.addMessage({
@@ -511,8 +528,8 @@ describe('compileContext integration', () => {
     const sessionId = 'tool-sess';
     store.createSession({ id: sessionId, concept: 'tools', createdAt: new Date().toISOString() });
     writeFileSync(
-      join(tempDir, sessionId, 'context-config.json'),
-      JSON.stringify({ toolOverrides: { read_file: { enabled: false } } }),
+      join(tempDir, sessionId, 'session-context.json'),
+      JSON.stringify({ version: 1, profileSelection: { mode: 'inherit_all' }, enabledTools: ['write_file', 'fetch_url'] }),
     );
 
     const result = compileContext(tempDir, store, sessionId, 'plain question');

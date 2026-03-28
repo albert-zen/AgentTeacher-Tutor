@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Modal from './Modal';
 import * as api from '../../api/client';
 import type { ProfileBlock } from '../../api/client';
@@ -8,28 +8,11 @@ type Tab = 'edit' | 'blocks';
 interface Props {
   open: boolean;
   onClose: () => void;
-  draft?: api.SessionDraftResponse;
-  onSaveDraft?: (draft: api.SessionDraftResponse) => Promise<unknown>;
+  draft: api.SessionDraftResponse;
+  onSaveDraft: (draft: api.SessionDraftResponse) => Promise<unknown>;
 }
 
-const fallbackDraft: api.SessionDraftResponse = {
-  manifest: {
-    version: 1,
-    profileSelection: { mode: 'inherit_all' },
-    enabledTools: ['read_file', 'write_file', 'fetch_url'],
-  },
-  sessionPrompt: '',
-};
-
 export default function ProfileModal({ open, onClose, draft, onSaveDraft }: Props) {
-  const effectiveDraft = draft ?? fallbackDraft;
-  const saveDraft = onSaveDraft ?? (async (nextDraft: api.SessionDraftResponse) => {
-    if (nextDraft.manifest.profileSelection.mode === 'explicit') {
-      await api.updateSessionTemplateConfig({ profileBlockIds: nextDraft.manifest.profileSelection.blockIds });
-    } else {
-      await api.updateSessionTemplateConfig({ profileBlockIds: undefined });
-    }
-  });
   const [tab, setTab] = useState<Tab>('edit');
   const [content, setContent] = useState('');
   const [blocks, setBlocks] = useState<ProfileBlock[]>([]);
@@ -40,24 +23,11 @@ export default function ProfileModal({ open, onClose, draft, onSaveDraft }: Prop
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    const selectionPromise: Promise<api.SessionDraftResponse> = draft
-      ? Promise.resolve(draft)
-      : api.getSessionTemplateConfig().then((config) => ({
-          ...fallbackDraft,
-          manifest: {
-            ...fallbackDraft.manifest,
-            profileSelection:
-              config.profileBlockIds === undefined
-                ? { mode: 'inherit_all' as const }
-                : { mode: 'explicit' as const, blockIds: config.profileBlockIds },
-          },
-        }));
-
-    Promise.all([api.getProfile(), api.getProfileBlocks(), selectionPromise])
-      .then(([profileRes, blocksRes, currentDraft]) => {
+    Promise.all([api.getProfile(), api.getProfileBlocks()])
+      .then(([profileRes, blocksRes]) => {
         setContent(profileRes.content);
         setBlocks(blocksRes);
-        const selection = currentDraft.manifest.profileSelection;
+        const selection = draft.manifest.profileSelection;
         const selectedIds =
           selection.mode === 'explicit'
             ? blocksRes.filter((block) => selection.blockIds.includes(block.id)).map((block) => block.id)
@@ -70,7 +40,7 @@ export default function ProfileModal({ open, onClose, draft, onSaveDraft }: Prop
         setChecked(new Set());
       })
       .finally(() => setLoading(false));
-  }, [draft, effectiveDraft, open]);
+  }, [draft, open]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -86,10 +56,10 @@ export default function ProfileModal({ open, onClose, draft, onSaveDraft }: Prop
         ? blocksRes.map((block) => block.id)
         : blocksRes.filter((block) => previousChecked.has(block.id)).map((block) => block.id);
 
-      await saveDraft({
-        ...effectiveDraft,
+      await onSaveDraft({
+        ...draft,
         manifest: {
-          ...effectiveDraft.manifest,
+          ...draft.manifest,
           profileSelection: {
             mode: 'explicit',
             blockIds: nextSelectedIds,

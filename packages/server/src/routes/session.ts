@@ -4,9 +4,8 @@ import type { Session } from '../types.js';
 import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseMilestones } from '../services/milestonesParser.js';
-import { assembleContext } from '../services/contextCompiler.js';
 import { buildSessionContextMemory } from '../services/contextPreview.js';
-import { loadSessionContext, loadSessionDraft, materializeDraftToSession, saveSessionContext } from '../services/sessionDraftService.js';
+import { loadSessionDraft, materializeDraftToSession } from '../services/sessionDraftService.js';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -93,24 +92,6 @@ export function createSessionRouter(store: Store, dataDir: string) {
     res.json(page ?? { items: [], nextCursor: null, hasMore: false });
   });
 
-  // Context preview
-  router.get('/:id/context-preview', (req, res) => {
-    const session = store.getSession(req.params.id);
-    if (!session) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-
-    const contextManifest = loadSessionContext(dataDir, session.id);
-    const context = assembleContext(dataDir, session.id, {
-      profileBlockIds:
-        contextManifest.profileSelection.mode === 'explicit'
-          ? contextManifest.profileSelection.blockIds
-          : undefined,
-    });
-    res.json(context);
-  });
-
   router.get('/:id/context-memory', (req, res) => {
     const session = store.getSession(req.params.id);
     if (!session) {
@@ -121,29 +102,6 @@ export function createSessionRouter(store: Store, dataDir: string) {
     const preview = buildSessionContextMemory(dataDir, store, session.id);
     res.json(preview);
   });
-
-  // Save context config
-  router.put('/:id/context-config', (req, res) => {
-    const session = store.getSession(req.params.id);
-    if (!session) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-    const current = loadSessionContext(dataDir, session.id);
-    const nextProfileSelection =
-      req.body.profileBlockIds === undefined
-        ? current.profileSelection
-        : {
-            mode: 'explicit' as const,
-            blockIds: Array.isArray(req.body.profileBlockIds) ? req.body.profileBlockIds : [],
-          };
-    saveSessionContext(dataDir, session.id, {
-      ...current,
-      profileSelection: nextProfileSelection,
-    });
-    res.json({ success: true });
-  });
-
   // Get session milestones progress
   router.get('/:id/milestones', (req, res) => {
     const session = store.getSession(req.params.id);

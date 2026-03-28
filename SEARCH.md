@@ -106,12 +106,9 @@ Tool Manager 托管整套本地搜索栈：
 - `packages/server/src/services/fetchUrlService.ts`
   `fetch_url` 调用入口
 
-## 兼容说明
+## 当前约定
 
-旧的搜索配置和接口仍保留了一层兼容，但已经不是主路径：
-
-- 旧 `search-config.json` 会在读取时迁移
-- 旧 `/api/search-config` 仍可工作，但新 UI 使用的是 tools 相关接口
+当前实现已经完全以 Tool Manager 为准，不再维护旧的 search config 入口。
 
 如果要继续开发，优先以以下心智模型为准：
 

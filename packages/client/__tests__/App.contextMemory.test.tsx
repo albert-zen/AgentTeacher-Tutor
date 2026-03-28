@@ -30,7 +30,7 @@ vi.mock('../src/components/SessionPromptModal', () => ({
   default: () => null,
 }));
 
-vi.mock('../src/components/SessionSearchConfigModal', () => ({
+vi.mock('../src/components/SessionToolsModal', () => ({
   default: () => null,
 }));
 

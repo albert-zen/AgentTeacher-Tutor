@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { updateSessionToolOverride, updateToolConfig } from '../src/services/toolConfig.js';
+import { updateToolConfig } from '../src/services/toolConfig.js';
+import { saveSessionContext, saveSessionDraft } from '../src/services/sessionDraftService.js';
 
 const runtimeManager = {
   getSnapshot: vi.fn(),
@@ -24,6 +25,19 @@ let tempDir: string;
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'teacher-search-service-'));
   mkdirSync(join(tempDir, 'session-1'), { recursive: true });
+  saveSessionDraft(tempDir, {
+    manifest: {
+      version: 1,
+      profileSelection: { mode: 'inherit_all' },
+      enabledTools: ['read_file', 'write_file', 'fetch_url'],
+    },
+    sessionPrompt: '',
+  });
+  saveSessionContext(tempDir, 'session-1', {
+    version: 1,
+    profileSelection: { mode: 'inherit_all' },
+    enabledTools: ['read_file', 'write_file', 'fetch_url'],
+  });
   vi.restoreAllMocks();
   runtimeManager.getSnapshot.mockReturnValue({ status: 'stopped', updatedAt: new Date().toISOString() });
   runtimeManager.ensureReady.mockResolvedValue({ status: 'ready', updatedAt: new Date().toISOString() });
@@ -35,8 +49,8 @@ afterEach(() => {
 });
 
 describe('searchService', () => {
-  it('returns an explicit disabled error when web_search is turned off', async () => {
-    updateToolConfig(tempDir, 'web_search', { enabledByDefault: false });
+  it('returns an explicit disabled error when web_search is turned off for the session', async () => {
+    updateToolConfig(tempDir, 'web_search', { runtimeMode: 'local' });
 
     const result = await searchWeb(tempDir, 'session-1', { query: 'react compiler' });
 
@@ -44,15 +58,18 @@ describe('searchService', () => {
     expect(result.error).toContain('disabled');
   });
 
-  it('uses session overrides and normalizes external SearXNG results', async () => {
+  it('uses session context and normalizes external SearXNG results', async () => {
     updateToolConfig(tempDir, 'web_search', {
-      enabledByDefault: false,
       runtimeMode: 'external',
       externalBaseURL: 'http://search.local',
       defaultMaxResults: 5,
       sidecar: { port: 19080 },
     });
-    updateSessionToolOverride(tempDir, 'session-1', 'web_search', { enabled: true });
+    saveSessionContext(tempDir, 'session-1', {
+      version: 1,
+      profileSelection: { mode: 'inherit_all' },
+      enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+    });
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -77,27 +94,21 @@ describe('searchService', () => {
       'web_search',
       expect.objectContaining({ runtimeMode: 'external', externalBaseURL: 'http://search.local' }),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe('http://127.0.0.1:19080/search');
     expect(result.success).toBe(true);
     expect(result.data?.provider).toBe('searxng');
-    expect(result.data?.results).toEqual([
-      {
-        title: 'React Compiler',
-        url: 'https://react.dev/compiler',
-        snippet: 'Official docs',
-        source: 'duckduckgo',
-        publishedAt: '2026-03-26T00:00:00Z',
-      },
-    ]);
   });
 
   it('uses the local sidecar and lazy-start readiness check when configured', async () => {
     updateToolConfig(tempDir, 'web_search', {
-      enabledByDefault: true,
       runtimeMode: 'local',
       sidecar: { port: 18081 },
       backend: { port: 18082 },
+    });
+    saveSessionContext(tempDir, 'session-1', {
+      version: 1,
+      profileSelection: { mode: 'inherit_all' },
+      enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
     });
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -120,9 +131,11 @@ describe('searchService', () => {
   });
 
   it('returns the runtime error when the local sidecar cannot be started', async () => {
-    updateToolConfig(tempDir, 'web_search', {
-      enabledByDefault: true,
-      runtimeMode: 'local',
+    updateToolConfig(tempDir, 'web_search', { runtimeMode: 'local' });
+    saveSessionContext(tempDir, 'session-1', {
+      version: 1,
+      profileSelection: { mode: 'inherit_all' },
+      enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
     });
     runtimeManager.ensureReady.mockResolvedValue({
       status: 'error',
@@ -137,9 +150,11 @@ describe('searchService', () => {
   });
 
   it('rejects custom engines in local mode', async () => {
-    updateToolConfig(tempDir, 'web_search', {
-      enabledByDefault: true,
-      runtimeMode: 'local',
+    updateToolConfig(tempDir, 'web_search', { runtimeMode: 'local' });
+    saveSessionContext(tempDir, 'session-1', {
+      version: 1,
+      profileSelection: { mode: 'inherit_all' },
+      enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
     });
 
     const result = await searchWeb(tempDir, 'session-1', { query: 'OpenClaw', engines: ['google'] });

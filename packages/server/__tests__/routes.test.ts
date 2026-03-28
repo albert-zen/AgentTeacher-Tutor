@@ -49,7 +49,8 @@ describe('GET /api/system-prompt', () => {
 describe('Context preview routes', () => {
   it('GET /api/context-preview/template returns ordered section modules', async () => {
     writeFileSync(join(tempDir, 'system-prompt.md'), '自定义系统提示词');
-    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '新会话默认教学指令');
+    mkdirSync(join(tempDir, 'session-draft'), { recursive: true });
+    writeFileSync(join(tempDir, 'session-draft', 'session-prompt.md'), '新会话默认教学指令');
     writeFileSync(join(tempDir, 'profile.md'), '# 背景\n喜欢图解');
 
     const res = await request(app).get('/api/context-preview/template');
@@ -63,16 +64,21 @@ describe('Context preview routes', () => {
     ]);
   });
 
-  it('GET/PUT /api/session-template-config persists new-session draft profile selection', async () => {
-    const put = await request(app).put('/api/session-template-config').send({
-      profileBlockIds: ['目标'],
+  it('GET/PUT /api/session-draft persists new-session profile selection', async () => {
+    const put = await request(app).put('/api/session-draft').send({
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'explicit', blockIds: ['目标'] },
+        enabledTools: ['read_file', 'write_file', 'fetch_url'],
+      },
+      sessionPrompt: '',
     });
     expect(put.status).toBe(200);
-    expect(put.body.profileBlockIds).toEqual(['目标']);
+    expect(put.body.manifest.profileSelection).toEqual({ mode: 'explicit', blockIds: ['目标'] });
 
-    const get = await request(app).get('/api/session-template-config');
+    const get = await request(app).get('/api/session-draft');
     expect(get.status).toBe(200);
-    expect(get.body.profileBlockIds).toEqual(['目标']);
+    expect(get.body.manifest.profileSelection).toEqual({ mode: 'explicit', blockIds: ['目标'] });
   });
 });
 

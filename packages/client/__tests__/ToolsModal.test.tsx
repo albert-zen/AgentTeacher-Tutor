@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
-import SearchConfigModal from '../src/components/landing/SearchConfigModal';
-import SessionSearchConfigModal from '../src/components/SessionSearchConfigModal';
+import ToolsModal from '../src/components/landing/ToolsModal';
+import SessionToolsModal from '../src/components/SessionToolsModal';
 
 const mockGetTools = vi.fn();
 const mockUpdateTool = vi.fn();
@@ -30,8 +30,7 @@ function makeToolsResponse() {
         uiVisible: true,
         runtimeMode: 'builtin',
         status: 'ready',
-        config: { enabledByDefault: true, runtimeMode: 'builtin' },
-        sessionOverride: null,
+        config: { runtimeMode: 'builtin' },
       },
       {
         id: 'write_file',
@@ -42,8 +41,7 @@ function makeToolsResponse() {
         uiVisible: true,
         runtimeMode: 'builtin',
         status: 'ready',
-        config: { enabledByDefault: true, runtimeMode: 'builtin' },
-        sessionOverride: null,
+        config: { runtimeMode: 'builtin' },
       },
       {
         id: 'web_search',
@@ -56,7 +54,6 @@ function makeToolsResponse() {
         status: 'stopped',
         message: 'Sidecar unavailable: ECONNREFUSED',
         config: {
-          enabledByDefault: true,
           runtimeMode: 'local',
           localProvider: 'duckduckgo',
           sidecar: { port: 18080 },
@@ -68,16 +65,15 @@ function makeToolsResponse() {
           allowedEngines: [],
           persistResultsByDefault: false,
         },
-        sessionOverride: null,
       },
     ],
     globalConfig: {
       version: 1 as const,
       tools: {
-        read_file: { enabledByDefault: true, runtimeMode: 'builtin' as const },
-        write_file: { enabledByDefault: true, runtimeMode: 'builtin' as const },
+        read_file: { runtimeMode: 'builtin' as const },
+        write_file: { runtimeMode: 'builtin' as const },
+        fetch_url: { runtimeMode: 'builtin' as const },
         web_search: {
-          enabledByDefault: true,
           runtimeMode: 'local' as const,
           localProvider: 'duckduckgo' as const,
           sidecar: { port: 18080 },
@@ -89,8 +85,13 @@ function makeToolsResponse() {
           allowedEngines: [],
           persistResultsByDefault: false,
         },
-        browser: { enabledByDefault: false, runtimeMode: 'managed' as const },
+        browser: { runtimeMode: 'managed' as const },
       },
+    },
+    manifest: {
+      version: 1 as const,
+      profileSelection: { mode: 'inherit_all' as const },
+      enabledTools: ['read_file', 'write_file', 'web_search', 'fetch_url'],
     },
   };
 }
@@ -104,19 +105,39 @@ describe('Tools modals', () => {
     mockRunToolRuntimeAction.mockResolvedValue(makeToolsResponse().tools[2]);
     mockGetSessionTools.mockResolvedValue({
       ...makeToolsResponse(),
-      sessionConfig: { toolOverrides: { web_search: { enabled: false } } },
-      tools: makeToolsResponse().tools.map((tool) =>
-        tool.id === 'web_search' ? { ...tool, enabled: false, sessionOverride: { enabled: false } } : tool,
-      ),
+      sessionConfig: {
+        version: 1 as const,
+        profileSelection: { mode: 'inherit_all' as const },
+        enabledTools: ['read_file', 'write_file', 'fetch_url'],
+      },
+      tools: makeToolsResponse().tools.map((tool) => (tool.id === 'web_search' ? { ...tool, enabled: false } : tool)),
     });
     mockUpdateSessionTool.mockResolvedValue({
       ...makeToolsResponse(),
-      sessionConfig: { toolOverrides: { web_search: { enabled: true } } },
+      sessionConfig: {
+        version: 1 as const,
+        profileSelection: { mode: 'inherit_all' as const },
+        enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+      },
     });
   });
 
   it('renders the global tools modal and triggers a runtime action', async () => {
-    render(<SearchConfigModal open onClose={() => {}} />);
+    render(
+      <ToolsModal
+        open
+        onClose={() => {}}
+        draft={{
+          manifest: {
+            version: 1,
+            profileSelection: { mode: 'inherit_all' },
+            enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+          },
+          sessionPrompt: '',
+        }}
+        onSaveDraft={vi.fn()}
+      />,
+    );
 
     expect(await screen.findByText('联网搜索')).toBeTruthy();
     expect(screen.getByText('Sidecar unavailable: ECONNREFUSED')).toBeTruthy();
@@ -136,7 +157,7 @@ describe('Tools modals', () => {
   });
 
   it('renders the session tools modal and saves a session override', async () => {
-    render(<SessionSearchConfigModal sessionId="session-1" open onClose={() => {}} />);
+    render(<SessionToolsModal sessionId="session-1" open onClose={() => {}} />);
 
     expect(await screen.findByText('Session 工具')).toBeTruthy();
     expect((await screen.findAllByText('联网搜索')).length).toBeGreaterThan(0);

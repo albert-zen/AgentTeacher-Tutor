@@ -26,10 +26,7 @@ export interface SessionDraft {
 const SESSION_DRAFT_DIR = 'session-draft';
 const SESSION_DRAFT_MANIFEST = 'manifest.json';
 const SESSION_DRAFT_PROMPT = 'session-prompt.md';
-const LEGACY_TEMPLATE_CONFIG = 'session-template-config.json';
-const LEGACY_SESSION_PROMPT_DRAFT = 'session-prompt-draft.md';
 const SESSION_CONTEXT_MANIFEST = 'session-context.json';
-const LEGACY_SESSION_CONTEXT = 'context-config.json';
 
 const DEFAULT_ENABLED_TOOLS: ToolId[] = ['read_file', 'write_file', 'fetch_url'];
 
@@ -74,13 +71,14 @@ function sessionContextPath(dataDir: string, sessionId: string) {
 }
 
 function normalizeToolIds(toolIds: ToolId[] | undefined): ToolId[] {
-  if (!toolIds) return [...DEFAULT_ENABLED_TOOLS];
-  return Array.from(new Set(toolIds));
+  return Array.from(new Set(toolIds ?? DEFAULT_ENABLED_TOOLS));
 }
 
 function normalizeProfileSelection(selection: ProfileSelection | undefined): ProfileSelection {
-  if (!selection) return { mode: 'inherit_all' };
-  if (selection.mode === 'inherit_all') return selection;
+  if (!selection || selection.mode === 'inherit_all') {
+    return { mode: 'inherit_all' };
+  }
+
   return {
     mode: 'explicit',
     blockIds: Array.from(new Set(selection.blockIds ?? [])),
@@ -97,93 +95,34 @@ function normalizeDraftManifest(manifest: Partial<SessionDraftManifest> | null):
 
 function normalizeSessionContextManifest(
   manifest: Partial<SessionContextManifest> | null,
+  inheritedEnabledTools?: ToolId[],
 ): SessionContextManifest {
   return {
     version: 1,
     profileSelection: normalizeProfileSelection(manifest?.profileSelection),
-    enabledTools: normalizeToolIds(manifest?.enabledTools),
+    enabledTools: normalizeToolIds(manifest?.enabledTools ?? inheritedEnabledTools),
   };
 }
 
-function legacyEnabledToolsFromConfig(dataDir: string): ToolId[] {
-  const raw = readJson<{
-    tools?: Partial<Record<ToolId, { enabledByDefault?: boolean }>>;
-  }>(join(dataDir, 'tool-config.json'));
-  const legacySearch = readJson<{ enabled?: boolean }>(join(dataDir, 'search-config.json'));
-
-  if (!raw?.tools) {
-    const enabled = new Set<ToolId>(DEFAULT_ENABLED_TOOLS);
-    if (legacySearch?.enabled) enabled.add('web_search');
-    return Array.from(enabled);
-  }
-
-  const enabled = new Set<ToolId>();
-  for (const toolId of ['read_file', 'write_file', 'fetch_url', 'web_search', 'browser'] as ToolId[]) {
-    if (raw.tools[toolId]?.enabledByDefault) {
-      enabled.add(toolId);
-    }
-  }
-  if (legacySearch?.enabled) {
-    enabled.add('web_search');
-  }
-  return enabled.size > 0 ? Array.from(enabled) : [...DEFAULT_ENABLED_TOOLS];
-}
-
-function legacyProfileSelection(profileBlockIds: string[] | undefined): ProfileSelection {
-  if (profileBlockIds === undefined) {
-    return { mode: 'inherit_all' };
-  }
+function createDefaultDraft(): SessionDraft {
   return {
-    mode: 'explicit',
-    blockIds: profileBlockIds,
+    manifest: normalizeDraftManifest(null),
+    sessionPrompt: '',
   };
-}
-
-function applyLegacyToolOverrides(
-  baseEnabledTools: ToolId[],
-  toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>>,
-): ToolId[] {
-  const next = new Set<ToolId>(baseEnabledTools);
-  for (const toolId of Object.keys(toolOverrides ?? {}) as ToolId[]) {
-    const enabled = toolOverrides?.[toolId]?.enabled;
-    if (enabled === true) next.add(toolId);
-    if (enabled === false) next.delete(toolId);
-  }
-  return Array.from(next);
 }
 
 export function loadSessionDraft(dataDir: string): SessionDraft {
-  const manifestPath = draftManifestPath(dataDir);
-  const promptPath = draftPromptPath(dataDir);
-
-  const manifest = readJson<Partial<SessionDraftManifest>>(manifestPath);
-  if (manifest) {
-    return {
-      manifest: normalizeDraftManifest(manifest),
-      sessionPrompt: readText(promptPath),
-    };
-  }
-
-  const legacyTemplate = readJson<{
-    profileBlockIds?: string[];
-    toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>>;
-  }>(join(dataDir, LEGACY_TEMPLATE_CONFIG));
-
-  const legacyEnabledTools = applyLegacyToolOverrides(
-    legacyEnabledToolsFromConfig(dataDir),
-    legacyTemplate?.toolOverrides,
-  );
-
-  const migrated: SessionDraft = {
-    manifest: normalizeDraftManifest({
-      profileSelection: legacyProfileSelection(legacyTemplate?.profileBlockIds),
-      enabledTools: legacyEnabledTools,
-    }),
-    sessionPrompt: readText(join(dataDir, LEGACY_SESSION_PROMPT_DRAFT)),
+  const manifest = readJson<Partial<SessionDraftManifest>>(draftManifestPath(dataDir));
+  const draft: SessionDraft = {
+    manifest: normalizeDraftManifest(manifest),
+    sessionPrompt: readText(draftPromptPath(dataDir)),
   };
 
-  saveSessionDraft(dataDir, migrated);
-  return migrated;
+  if (!manifest || !existsSync(draftPromptPath(dataDir))) {
+    saveSessionDraft(dataDir, draft);
+  }
+
+  return draft;
 }
 
 export function saveSessionDraft(dataDir: string, draft: SessionDraft): SessionDraft {
@@ -193,17 +132,10 @@ export function saveSessionDraft(dataDir: string, draft: SessionDraft): SessionD
   };
   writeJson(draftManifestPath(dataDir), normalized.manifest);
   writeText(draftPromptPath(dataDir), normalized.sessionPrompt);
-  writeJson(join(dataDir, LEGACY_TEMPLATE_CONFIG), {
-    profileBlockIds: profileSelectionToLegacyBlockIds(normalized.manifest.profileSelection),
-  });
-  writeText(join(dataDir, LEGACY_SESSION_PROMPT_DRAFT), normalized.sessionPrompt);
   return normalized;
 }
 
-export function updateSessionDraft(
-  dataDir: string,
-  patch: Partial<SessionDraft>,
-): SessionDraft {
+export function updateSessionDraft(dataDir: string, patch: Partial<SessionDraft>): SessionDraft {
   const current = loadSessionDraft(dataDir);
   return saveSessionDraft(dataDir, {
     manifest: {
@@ -220,26 +152,16 @@ export function loadSessionContext(dataDir: string, sessionId: string): SessionC
     return normalizeSessionContextManifest(current);
   }
 
-  const legacy = readJson<{
-    profileBlockIds?: string[];
-    toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>>;
-  }>(join(dataDir, sessionId, LEGACY_SESSION_CONTEXT));
-
-  const inheritedEnabledTools = loadSessionDraft(dataDir).manifest.enabledTools;
-
-  if (!legacy) {
-    return normalizeSessionContextManifest({
-      profileSelection: { mode: 'inherit_all' },
-      enabledTools: inheritedEnabledTools,
-    });
-  }
-
-  const migrated = normalizeSessionContextManifest({
-    profileSelection: legacyProfileSelection(legacy?.profileBlockIds),
-    enabledTools: applyLegacyToolOverrides(inheritedEnabledTools, legacy?.toolOverrides),
-  });
-  saveSessionContext(dataDir, sessionId, migrated);
-  return migrated;
+  const inherited = loadSessionDraft(dataDir);
+  const bootstrap = normalizeSessionContextManifest(
+    {
+      profileSelection: inherited.manifest.profileSelection,
+      enabledTools: inherited.manifest.enabledTools,
+    },
+    inherited.manifest.enabledTools,
+  );
+  saveSessionContext(dataDir, sessionId, bootstrap);
+  return bootstrap;
 }
 
 export function saveSessionContext(
@@ -249,9 +171,6 @@ export function saveSessionContext(
 ): SessionContextManifest {
   const normalized = normalizeSessionContextManifest(manifest);
   writeJson(sessionContextPath(dataDir, sessionId), normalized);
-  writeJson(join(dataDir, sessionId, LEGACY_SESSION_CONTEXT), {
-    profileBlockIds: profileSelectionToLegacyBlockIds(normalized.profileSelection),
-  });
   return normalized;
 }
 
@@ -287,7 +206,11 @@ export function materializeDraftToSession(
   return manifest;
 }
 
-export function profileSelectionToLegacyBlockIds(selection: ProfileSelection): string[] | undefined {
+export function profileSelectionToBlockIds(selection: ProfileSelection): string[] | undefined {
   if (selection.mode === 'inherit_all') return undefined;
   return selection.blockIds;
+}
+
+export function createDefaultSessionDraft(): SessionDraft {
+  return createDefaultDraft();
 }

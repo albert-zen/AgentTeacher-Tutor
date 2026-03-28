@@ -5,25 +5,10 @@ import * as api from '../../api/client';
 interface Props {
   open: boolean;
   onClose: () => void;
-  draft?: api.SessionDraftResponse;
-  onSaveDraft?: (draft: api.SessionDraftResponse) => Promise<unknown>;
+  draft: api.SessionDraftResponse;
+  onSaveDraft: (draft: api.SessionDraftResponse) => Promise<unknown>;
 }
-
-const fallbackDraft: api.SessionDraftResponse = {
-  manifest: {
-    version: 1,
-    profileSelection: { mode: 'inherit_all' },
-    enabledTools: ['read_file', 'write_file', 'fetch_url'],
-  },
-  sessionPrompt: '',
-};
-
-export default function SessionPromptDraftModal({
-  open,
-  onClose,
-  draft = fallbackDraft,
-  onSaveDraft = async () => {},
-}: Props) {
+export default function SessionPromptDraftModal({ open, onClose, draft, onSaveDraft }: Props) {
   const [content, setContent] = useState(draft.sessionPrompt);
   const [saving, setSaving] = useState(false);
 

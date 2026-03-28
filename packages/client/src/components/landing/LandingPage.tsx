@@ -15,23 +15,14 @@ interface Props {
   sessions: Session[];
   onStart: (concept: string) => void;
   onLoadSession: (id: string) => void;
-  draft?: api.SessionDraftResponse;
-  onSaveDraft?: (draft: api.SessionDraftResponse) => Promise<unknown>;
+  draft: api.SessionDraftResponse;
+  onSaveDraft: (draft: api.SessionDraftResponse) => Promise<unknown>;
 }
 
-const fallbackDraft: api.SessionDraftResponse = {
-  manifest: {
-    version: 1,
-    profileSelection: { mode: 'inherit_all' },
-    enabledTools: ['read_file', 'write_file', 'fetch_url'],
-  },
-  sessionPrompt: '',
-};
-
-export default function LandingPage({ sessions, onStart, onLoadSession, draft = fallbackDraft, onSaveDraft = async () => {} }: Props) {
+export default function LandingPage({ sessions, onStart, onLoadSession, draft, onSaveDraft }: Props) {
   const [conceptInput, setConceptInput] = useState('');
   const [modal, setModal] = useState<
-    'profile' | 'system-prompt' | 'session-prompt' | 'llm' | 'search' | 'context-preview' | null
+    'profile' | 'system-prompt' | 'session-prompt' | 'llm' | 'tools' | 'context-preview' | null
   >(null);
   const [settingsRefreshKey, setSettingsRefreshKey] = useState(0);
 
@@ -97,7 +88,7 @@ export default function LandingPage({ sessions, onStart, onLoadSession, draft = 
               onOpenSystemPrompt={() => setModal('system-prompt')}
               onOpenSessionPrompt={() => setModal('session-prompt')}
               onOpenLLM={() => setModal('llm')}
-              onOpenSearch={() => setModal('search')}
+              onOpenSearch={() => setModal('tools')}
             />
             <button
               onClick={() => setModal('context-preview')}
@@ -135,7 +126,7 @@ export default function LandingPage({ sessions, onStart, onLoadSession, draft = 
         onSaveDraft={onSaveDraft}
       />
       <LLMConfigModal open={modal === 'llm'} onClose={handleCloseModal} />
-      <ToolsModal open={modal === 'search'} onClose={handleCloseModal} draft={draft} onSaveDraft={onSaveDraft} />
+      <ToolsModal open={modal === 'tools'} onClose={handleCloseModal} draft={draft} onSaveDraft={onSaveDraft} />
       <ContextPreviewModal
         open={modal === 'context-preview'}
         onClose={handleCloseModal}

@@ -166,21 +166,6 @@ export async function getProfileBlocks(): Promise<ProfileBlock[]> {
   return res.json();
 }
 
-export async function getSessionPromptDraft(): Promise<FileContent> {
-  const res = await fetch(`${BASE}/session-prompt-draft`);
-  await assertOk(res);
-  return res.json();
-}
-
-export async function updateSessionPromptDraft(content: string): Promise<void> {
-  const res = await fetch(`${BASE}/session-prompt-draft`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
-  });
-  await assertOk(res);
-}
-
 export async function getSystemPrompt(): Promise<FileContent & { defaultContent: string }> {
   const res = await fetch(`${BASE}/system-prompt`);
   await assertOk(res);
@@ -338,7 +323,7 @@ export async function updateSessionTool(
   config: {
     toolId: ToolId;
     enabled?: boolean;
-  }
+  },
 ): Promise<SessionToolsResponse> {
   const res = await fetch(`${BASE}/session/${sessionId}/tools`, {
     method: 'PUT',
@@ -356,20 +341,6 @@ export interface MilestoneProgress {
 
 export async function getSessionMilestones(sessionId: string): Promise<MilestoneProgress> {
   const res = await fetch(`${BASE}/session/${sessionId}/milestones`);
-  await assertOk(res);
-  return res.json();
-}
-
-export interface ContextPreview {
-  systemPrompt: string;
-  profileBlocks: ProfileBlock[];
-  selectedProfileContent: string;
-  enabledTools?: { id: ToolId; label: string }[];
-  toolInstructions?: string;
-}
-
-export async function getContextPreview(sessionId: string): Promise<ContextPreview> {
-  const res = await fetch(`${BASE}/session/${sessionId}/context-preview`);
   await assertOk(res);
   return res.json();
 }
@@ -440,34 +411,6 @@ export async function updateSessionDraft(draft: SessionDraftResponse): Promise<S
   });
   await assertOk(res);
   return res.json();
-}
-
-export async function getSessionTemplateConfig(): Promise<{ profileBlockIds?: string[] }> {
-  const res = await fetch(`${BASE}/session-template-config`);
-  await assertOk(res);
-  return res.json();
-}
-
-export async function updateSessionTemplateConfig(config: { profileBlockIds?: string[] }): Promise<{ profileBlockIds?: string[] }> {
-  const res = await fetch(`${BASE}/session-template-config`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-  });
-  await assertOk(res);
-  return res.json();
-}
-
-export async function updateContextConfig(
-  sessionId: string,
-  config: { profileBlockIds?: string[] },
-): Promise<void> {
-  const res = await fetch(`${BASE}/session/${sessionId}/context-config`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-  });
-  await assertOk(res);
 }
 
 export interface SSEEvent {

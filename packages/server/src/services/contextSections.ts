@@ -7,7 +7,7 @@ import { getSystemPrompt } from './llm.js';
 import { parseProfileBlocks, type ProfileBlock } from './profileParser.js';
 import { FileService } from './fileService.js';
 import { parseReferences, type FileReference } from './referenceParser.js';
-import { loadSessionDraft, loadSessionContext, profileSelectionToLegacyBlockIds } from './sessionDraftService.js';
+import { loadSessionDraft, loadSessionContext, profileSelectionToBlockIds } from './sessionDraftService.js';
 import { resolveToolContext } from './toolManager.js';
 
 export interface ContextSection {
@@ -181,7 +181,7 @@ export class ContextSectionsService {
 
     if (draft.sessionPrompt.trim()) {
       sections.push({
-        id: 'session-prompt-draft',
+        id: 'draft-session-prompt',
         kind: 'session_prompt',
         title: 'Session Prompt Draft',
         source: 'data/session-draft/session-prompt.md',
@@ -207,7 +207,7 @@ export class ContextSectionsService {
     }
 
     let profileOrder = 100;
-    const profileBlocks = filterProfileBlocks(dataDir, profileSelectionToLegacyBlockIds(draft.manifest.profileSelection));
+    const profileBlocks = filterProfileBlocks(dataDir, profileSelectionToBlockIds(draft.manifest.profileSelection));
     for (const block of profileBlocks) {
       sections.push({
         id: `profile-${block.id}`,
@@ -267,7 +267,7 @@ export class ContextSectionsService {
     }
 
     let profileOrder = 100;
-    const profileBlocks = filterProfileBlocks(dataDir, profileSelectionToLegacyBlockIds(context.profileSelection));
+    const profileBlocks = filterProfileBlocks(dataDir, profileSelectionToBlockIds(context.profileSelection));
     for (const block of profileBlocks) {
       sections.push({
         id: `profile-${block.id}`,

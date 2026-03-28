@@ -158,8 +158,9 @@ describe('Session lifecycle routes', () => {
 });
 
 describe('Session prompt draft copy on creation', () => {
-  it('copies draft into new session when session-prompt-draft.md exists', async () => {
-    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '多用物理类比来解释');
+  it('copies draft into new session when session-draft/session-prompt.md exists', async () => {
+    mkdirSync(join(tempDir, 'session-draft'), { recursive: true });
+    writeFileSync(join(tempDir, 'session-draft', 'session-prompt.md'), '多用物理类比来解释');
 
     const res = await request(app).post('/api/session').send({ concept: 'test' });
     const sessionId = res.body.id;
@@ -178,7 +179,8 @@ describe('Session prompt draft copy on creation', () => {
   });
 
   it('does not create session-prompt.md when draft is empty/whitespace', async () => {
-    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '   \n  ');
+    mkdirSync(join(tempDir, 'session-draft'), { recursive: true });
+    writeFileSync(join(tempDir, 'session-draft', 'session-prompt.md'), '   \n  ');
 
     const res = await request(app).post('/api/session').send({ concept: 'test' });
     const sessionId = res.body.id;
@@ -188,7 +190,8 @@ describe('Session prompt draft copy on creation', () => {
   });
 
   it('each session gets its own copy — editing one does not affect others', async () => {
-    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '原始指令');
+    mkdirSync(join(tempDir, 'session-draft'), { recursive: true });
+    writeFileSync(join(tempDir, 'session-draft', 'session-prompt.md'), '原始指令');
 
     const s1 = (await request(app).post('/api/session').send({ concept: 'a' })).body.id;
     const s2 = (await request(app).post('/api/session').send({ concept: 'b' })).body.id;
@@ -200,17 +203,27 @@ describe('Session prompt draft copy on creation', () => {
     expect(readFileSync(join(tempDir, s2, 'session-prompt.md'), 'utf-8')).toBe('原始指令');
   });
 
-  it('copies landing draft profile block selection into the new session context config', async () => {
-    writeFileSync(join(tempDir, 'session-template-config.json'), JSON.stringify({ profileBlockIds: ['学习目标'] }));
+  it('copies landing draft profile selection into the new session context manifest', async () => {
+    mkdirSync(join(tempDir, 'session-draft'), { recursive: true });
+    writeFileSync(
+      join(tempDir, 'session-draft', 'manifest.json'),
+      JSON.stringify({
+        version: 1,
+        profileSelection: { mode: 'explicit', blockIds: ['学习目标'] },
+        enabledTools: ['read_file', 'write_file', 'fetch_url'],
+      }),
+    );
     writeFileSync(join(tempDir, 'profile.md'), '# 基本信息\nA\n# 学习目标\nB');
 
     const res = await request(app).post('/api/session').send({ concept: 'test' });
     const sessionId = res.body.id;
 
-    const contextConfigPath = join(tempDir, sessionId, 'context-config.json');
+    const contextConfigPath = join(tempDir, sessionId, 'session-context.json');
     expect(existsSync(contextConfigPath)).toBe(true);
     expect(JSON.parse(readFileSync(contextConfigPath, 'utf-8'))).toEqual({
-      profileBlockIds: ['学习目标'],
+      version: 1,
+      profileSelection: { mode: 'explicit', blockIds: ['学习目标'] },
+      enabledTools: ['read_file', 'write_file', 'fetch_url'],
     });
   });
 });
@@ -224,7 +237,14 @@ describe('Session context memory route', () => {
     writeFileSync(join(tempDir, 'system-prompt.md'), '系统提示词');
     writeFileSync(join(tempDir, sessionId, 'session-prompt.md'), 'Session 指令');
     writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端\n# 目标\n查资料');
-    writeFileSync(join(tempDir, sessionId, 'context-config.json'), JSON.stringify({ profileBlockIds: ['目标'] }));
+    writeFileSync(
+      join(tempDir, sessionId, 'session-context.json'),
+      JSON.stringify({
+        version: 1,
+        profileSelection: { mode: 'explicit', blockIds: ['目标'] },
+        enabledTools: ['read_file', 'write_file', 'fetch_url'],
+      }),
+    );
 
     store.addMessage({
       id: 'u1',

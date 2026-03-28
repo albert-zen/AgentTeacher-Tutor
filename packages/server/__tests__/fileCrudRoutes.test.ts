@@ -59,21 +59,30 @@ describe('Profile routes', () => {
   });
 });
 
-describe('Session prompt draft routes', () => {
-  it('GET /api/session-prompt-draft returns empty when no draft exists', async () => {
-    const res = await request(app).get('/api/session-prompt-draft');
+describe('Session draft routes', () => {
+  it('GET /api/session-draft returns the default draft when no file exists', async () => {
+    const res = await request(app).get('/api/session-draft');
     expect(res.status).toBe(200);
-    expect(res.body.content).toBe('');
-    expect(res.body.totalLines).toBe(0);
+    expect(res.body.manifest.profileSelection).toEqual({ mode: 'inherit_all' });
+    expect(res.body.manifest.enabledTools).toEqual(['read_file', 'write_file', 'fetch_url']);
+    expect(res.body.sessionPrompt).toBe('');
   });
 
-  it('PUT /api/session-prompt-draft saves and GET returns it', async () => {
-    const put = await request(app).put('/api/session-prompt-draft').send({ content: '多用物理类比' });
+  it('PUT /api/session-draft saves and GET returns it', async () => {
+    const put = await request(app).put('/api/session-draft').send({
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'explicit', blockIds: ['学习目标'] },
+        enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+      },
+      sessionPrompt: '多用物理类比',
+    });
     expect(put.status).toBe(200);
-    expect(put.body.success).toBe(true);
+    expect(put.body.sessionPrompt).toBe('多用物理类比');
 
-    const get = await request(app).get('/api/session-prompt-draft');
-    expect(get.body.content).toBe('多用物理类比');
+    const get = await request(app).get('/api/session-draft');
+    expect(get.body.sessionPrompt).toBe('多用物理类比');
+    expect(get.body.manifest.profileSelection).toEqual({ mode: 'explicit', blockIds: ['学习目标'] });
   });
 });
 
@@ -87,51 +96,61 @@ describe('Tool manager routes', () => {
 
   it('PUT /api/tools/:id persists global tool config', async () => {
     const put = await request(app).put('/api/tools/web_search').send({
-      enabledByDefault: true,
       runtimeMode: 'external',
       externalBaseURL: 'http://localhost:9999',
       defaultMaxResults: 7,
       timeoutMs: 9000,
     });
     expect(put.status).toBe(200);
-    expect(put.body.globalConfig.tools.web_search.enabledByDefault).toBe(true);
     expect(put.body.globalConfig.tools.web_search.externalBaseURL).toBe('http://localhost:9999');
 
     const get = await request(app).get('/api/tools');
-    expect(get.body.globalConfig.tools.web_search.enabledByDefault).toBe(true);
     expect(get.body.globalConfig.tools.web_search.defaultMaxResults).toBe(7);
   });
 
   it('GET /api/session/:id/tools returns effective tool states and overrides', async () => {
+    await request(app).put('/api/session-draft').send({
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'inherit_all' },
+        enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+      },
+      sessionPrompt: '',
+    });
     const id = await createTestSession();
-    await request(app).put('/api/tools/web_search').send({ enabledByDefault: true });
 
     const res = await request(app).get(`/api/session/${id}/tools`);
     expect(res.status).toBe(200);
-    expect(res.body.sessionConfig.toolOverrides.web_search).toEqual({ enabled: false });
-    expect(res.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(false);
+    expect(res.body.sessionConfig.enabledTools).toContain('web_search');
+    expect(res.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(true);
   });
 
-  it('PUT /api/session/:id/tools saves and clears a session override', async () => {
+  it('PUT /api/session/:id/tools updates the session tool snapshot', async () => {
+    await request(app).put('/api/session-draft').send({
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'inherit_all' },
+        enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+      },
+      sessionPrompt: '',
+    });
     const id = await createTestSession();
-    await request(app).put('/api/tools/web_search').send({ enabledByDefault: true });
 
     const put = await request(app).put(`/api/session/${id}/tools`).send({
       toolId: 'web_search',
-      override: true,
       enabled: false,
     });
     expect(put.status).toBe(200);
-    expect(put.body.sessionConfig.toolOverrides.web_search).toEqual({ enabled: false });
+    expect(put.body.sessionConfig.enabledTools).not.toContain('web_search');
     expect(put.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(false);
 
-    const clear = await request(app).put(`/api/session/${id}/tools`).send({
+    const enableAgain = await request(app).put(`/api/session/${id}/tools`).send({
       toolId: 'web_search',
-      override: false,
+      enabled: true,
     });
-    expect(clear.status).toBe(200);
-    expect(clear.body.sessionConfig.toolOverrides ?? {}).toEqual({});
-    expect(clear.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(true);
+    expect(enableAgain.status).toBe(200);
+    expect(enableAgain.body.sessionConfig.enabledTools).toContain('web_search');
+    expect(enableAgain.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(true);
   });
 });
 

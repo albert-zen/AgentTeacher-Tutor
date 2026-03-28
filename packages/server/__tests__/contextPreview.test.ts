@@ -4,7 +4,8 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { Store } from '../src/db/index.js';
 import { buildSessionContextMemory, buildTemplateContextPreview } from '../src/services/contextPreview.js';
-import { saveToolConfig, saveSessionContextConfig, saveSessionTemplateConfig } from '../src/services/toolConfig.js';
+import { saveToolConfig } from '../src/services/toolConfig.js';
+import { saveSessionContext, saveSessionDraft } from '../src/services/sessionDraftService.js';
 
 let tempDir: string;
 
@@ -19,13 +20,18 @@ afterEach(() => {
 describe('buildTemplateContextPreview', () => {
   it('returns ordered template sections for system prompt, draft, tools, and profile', () => {
     writeFileSync(join(tempDir, 'system-prompt.md'), '你是一个温和的老师。');
-    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '先解释直觉，再给形式化定义。');
     writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端工程师');
+    saveSessionDraft(tempDir, {
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'inherit_all' },
+        enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+      },
+      sessionPrompt: '先解释直觉，再给形式化定义。',
+    });
     saveToolConfig(tempDir, {
       tools: {
-        web_search: {
-          enabledByDefault: true,
-        },
+        web_search: {},
       },
     });
 
@@ -43,7 +49,14 @@ describe('buildTemplateContextPreview', () => {
 
   it('filters template profile blocks using the new-session draft config', () => {
     writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端工程师\n# 目标\n理解上下文');
-    saveSessionTemplateConfig(tempDir, { profileBlockIds: ['目标'] });
+    saveSessionDraft(tempDir, {
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'explicit', blockIds: ['目标'] },
+        enabledTools: ['read_file', 'write_file', 'fetch_url'],
+      },
+      sessionPrompt: '',
+    });
 
     const result = buildTemplateContextPreview(tempDir);
 
@@ -54,7 +67,14 @@ describe('buildTemplateContextPreview', () => {
 
   it('omits template profile section when the draft config selects no profile blocks', () => {
     writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端工程师');
-    saveSessionTemplateConfig(tempDir, { profileBlockIds: [] });
+    saveSessionDraft(tempDir, {
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'explicit', blockIds: [] },
+        enabledTools: ['read_file', 'write_file', 'fetch_url'],
+      },
+      sessionPrompt: '',
+    });
 
     const result = buildTemplateContextPreview(tempDir);
 
@@ -72,12 +92,22 @@ describe('buildSessionContextMemory', () => {
     writeFileSync(join(tempDir, 'system-prompt.md'), '系统提示词');
     writeFileSync(join(tempDir, sessionId, 'session-prompt.md'), 'Session 定制指令');
     writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端\n# 目标\n理解上下文编排');
-    saveSessionContextConfig(tempDir, sessionId, { profileBlockIds: ['目标'] });
+    saveSessionDraft(tempDir, {
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'inherit_all' },
+        enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+      },
+      sessionPrompt: '',
+    });
+    saveSessionContext(tempDir, sessionId, {
+      version: 1,
+      profileSelection: { mode: 'explicit', blockIds: ['目标'] },
+      enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+    });
     saveToolConfig(tempDir, {
       tools: {
-        web_search: {
-          enabledByDefault: true,
-        },
+        web_search: {},
       },
     });
 

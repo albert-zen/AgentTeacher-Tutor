@@ -175,8 +175,6 @@ data/
 | GET | `/api/session/:id/milestones` | Milestone progress |
 | GET | `/api/context-preview/template` | Preview landing draft context |
 | GET | `/api/session/:id/context-memory` | Preview current session memory |
-| GET | `/api/session/:id/context-preview` | Legacy compatibility preview |
-| PUT | `/api/session/:id/context-config` | Save context selection config |
 | GET/PUT | `/api/session-draft` | Landing Page draft state |
 | GET | `/api/:sid/files` | List session files |
 | GET | `/api/:sid/file?path=` | Read file |
@@ -200,7 +198,7 @@ data/
 - `ContextSectionsService.buildDraftSections()`：Landing Page 的上下文预览
 - `ContextSectionsService.buildSessionSections()`：Session 内的模型记忆与真实注入源
 - `ContextSectionsService.serializeSectionsForModel()`：把 sections 序列化成模型 system string
-- `contextCompiler.ts`：只保留兼容 facade，方便旧接口和旧测试继续工作
+- `contextCompiler.ts`：当前只是薄封装，后续可继续内联到 sections service
 
 ```mermaid
 graph LR
@@ -248,7 +246,6 @@ Phase 2 — 可见的上下文 ✅
   ✅ Tool Manager 接入上下文编排
 
 Phase 3 — 完整编排 (next)
-  → 继续清理兼容层（旧 preview / context-config / search-config）
   → 聊天历史文件化 + Fork
   → 多模态输入（图片/视觉）
   → 更完整的可管理工具栈

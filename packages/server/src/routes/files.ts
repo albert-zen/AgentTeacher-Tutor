@@ -11,10 +11,9 @@ import {
   saveLLMConfig,
 } from '../services/llm.js';
 import { resolveToolContext, runToolRuntimeAction, setDraftToolEnabled, setSessionToolEnabled, updateGlobalToolState } from '../services/toolManager.js';
-import { loadSessionContextConfig, loadToolConfig } from '../services/toolConfig.js';
 import type { ToolId } from '../services/toolDefinitions.js';
 import { buildTemplateContextPreview } from '../services/contextPreview.js';
-import { loadSessionDraft, saveSessionDraft, type SessionDraft } from '../services/sessionDraftService.js';
+import { loadSessionContext, loadSessionDraft, saveSessionDraft, type SessionDraft } from '../services/sessionDraftService.js';
 
 export function createFilesRouter(store: Store, dataDir: string) {
   const router = Router();
@@ -130,19 +129,6 @@ export function createFilesRouter(store: Store, dataDir: string) {
     res.json({ success: true });
   });
 
-  // Session draft (template for new sessions)
-  router.get('/session-prompt-draft', (_req, res) => {
-    const draft = loadSessionDraft(dataDir);
-    res.json({ content: draft.sessionPrompt, totalLines: draft.sessionPrompt ? draft.sessionPrompt.split('\n').length : 0 });
-  });
-
-  router.put('/session-prompt-draft', (req, res) => {
-    const { content } = req.body;
-    const draft = loadSessionDraft(dataDir);
-    saveSessionDraft(dataDir, { ...draft, sessionPrompt: content ?? '' });
-    res.json({ success: true });
-  });
-
   router.get('/session-draft', (_req, res) => {
     res.json(loadSessionDraft(dataDir));
   });
@@ -185,30 +171,6 @@ export function createFilesRouter(store: Store, dataDir: string) {
     res.json(buildTemplateContextPreview(dataDir));
   });
 
-  router.get('/session-template-config', (_req, res) => {
-    const draft = loadSessionDraft(dataDir);
-    const profileBlockIds =
-      draft.manifest.profileSelection.mode === 'explicit' ? draft.manifest.profileSelection.blockIds : undefined;
-    res.json({ profileBlockIds });
-  });
-
-  router.put('/session-template-config', (req, res) => {
-    const draft = loadSessionDraft(dataDir);
-    const profileBlockIds = Array.isArray(req.body.profileBlockIds) ? req.body.profileBlockIds : undefined;
-    const next = saveSessionDraft(dataDir, {
-      ...draft,
-      manifest: {
-        ...draft.manifest,
-        profileSelection:
-          profileBlockIds === undefined ? { mode: 'inherit_all' } : { mode: 'explicit', blockIds: profileBlockIds },
-      },
-    });
-    res.json({
-      profileBlockIds:
-        next.manifest.profileSelection.mode === 'explicit' ? next.manifest.profileSelection.blockIds : undefined,
-    });
-  });
-
   router.put('/tools/:id', async (req, res) => {
     const toolId = req.params.id as ToolId;
     try {
@@ -248,7 +210,7 @@ export function createFilesRouter(store: Store, dataDir: string) {
     const context = resolveToolContext(dataDir, session.id);
     res.json({
       tools: context.visibleTools,
-      sessionConfig: loadSessionContextConfig(dataDir, session.id),
+      sessionConfig: loadSessionContext(dataDir, session.id),
       globalConfig: context.globalConfig,
     });
   });
@@ -260,76 +222,23 @@ export function createFilesRouter(store: Store, dataDir: string) {
       return;
     }
 
-    const { toolId, enabled, override } = req.body as { toolId?: ToolId; enabled?: boolean; override?: boolean };
+    const { toolId, enabled } = req.body as { toolId?: ToolId; enabled?: boolean };
     if (!toolId) {
       res.status(400).json({ error: 'toolId is required' });
       return;
     }
 
     try {
-      const desiredEnabled =
-        override === false
-          ? resolveToolContext(dataDir).visibleTools.find((tool) => tool.id === toolId)?.enabled ?? false
-          : enabled === undefined
-            ? true
-            : Boolean(enabled);
+      const desiredEnabled = enabled === undefined ? true : Boolean(enabled);
       const next = setSessionToolEnabled(dataDir, session.id, toolId, desiredEnabled);
       res.json({
         tools: next.visibleTools,
-        sessionConfig: loadSessionContextConfig(dataDir, session.id),
+        sessionConfig: loadSessionContext(dataDir, session.id),
         globalConfig: next.globalConfig,
       });
     } catch (error: unknown) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
     }
-  });
-
-  // Backward-compatible search config aliases backed by Tool Manager
-  router.get('/search-config', (_req, res) => {
-    res.json(loadToolConfig(dataDir).tools.web_search);
-  });
-
-  router.put('/search-config', async (req, res) => {
-    const patch = {
-      runtimeMode: req.body.baseURL ? ('external' as const) : undefined,
-      externalBaseURL: req.body.baseURL ? String(req.body.baseURL) : undefined,
-      defaultMaxResults: req.body.defaultMaxResults === undefined ? undefined : Number(req.body.defaultMaxResults),
-      timeoutMs: req.body.timeoutMs === undefined ? undefined : Number(req.body.timeoutMs),
-    };
-    const next = await updateGlobalToolState(dataDir, 'web_search', patch);
-    res.json(next.globalConfig.tools.web_search);
-  });
-
-  router.get('/session/:id/search-config', (req, res) => {
-    const session = store.getSession(req.params.id);
-    if (!session) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-    const context = resolveToolContext(dataDir, session.id);
-    const tool = context.visibleTools.find((item) => item.id === 'web_search');
-    res.json({
-      override: true,
-      localConfig: tool ? { enabled: tool.enabled } : null,
-      effectiveConfig: tool?.config,
-      runtimeStatus: tool ? { status: tool.status, message: tool.message } : null,
-    });
-  });
-
-  router.put('/session/:id/search-config', async (req, res) => {
-    const session = store.getSession(req.params.id);
-    if (!session) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-    const next = setSessionToolEnabled(dataDir, session.id, 'web_search', req.body.enabled === undefined ? true : Boolean(req.body.enabled));
-    const tool = next.visibleTools.find((item) => item.id === 'web_search');
-    res.json({
-      override: true,
-      localConfig: tool ? { enabled: tool.enabled } : null,
-      effectiveConfig: tool?.config,
-      runtimeStatus: tool ? { status: tool.status, message: tool.message } : null,
-    });
   });
 
   // LLM status (read-only, no apiKey exposed)

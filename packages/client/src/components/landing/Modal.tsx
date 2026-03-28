@@ -6,9 +6,10 @@ interface Props {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  maxWidthClassName?: string;
 }
 
-export default function Modal({ open, onClose, title, children }: Props) {
+export default function Modal({ open, onClose, title, children, maxWidthClassName = 'max-w-lg' }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function Modal({ open, onClose, title, children }: Props) {
         ref={dialogRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="relative flex max-h-[min(88vh,960px)] w-full max-w-lg flex-col overflow-hidden bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl shadow-black/40 outline-none animate-in"
+        className={`relative flex max-h-[min(88vh,960px)] w-full ${maxWidthClassName} flex-col overflow-hidden bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl shadow-black/40 outline-none animate-in`}
       >
         {/* Header */}
         <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-zinc-800">

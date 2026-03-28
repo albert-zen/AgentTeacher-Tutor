@@ -187,7 +187,7 @@ function createHistorySections(messages: ChatMessage[], startOrder: number): Con
       kind: 'history_turn',
       title: messageTitle(message, index),
       summary: summarize(message.content || message.resolvedContent || ''),
-      sourceLabel: 'data/{sessionId}/messages.json',
+      sourceLabel: `data/${message.sessionId}/messages.json`,
       order: startOrder + index,
       content: message.role === 'user' ? (message.resolvedContent ?? message.content) : message.content,
       meta: {

@@ -9,6 +9,7 @@ import ResizeHandle from './components/ResizeHandle';
 import LandingPage from './components/landing/LandingPage';
 import SessionPromptModal from './components/SessionPromptModal';
 import SessionSearchConfigModal from './components/SessionSearchConfigModal';
+import ContextPreviewModal from './components/ContextPreviewModal';
 import { useSession } from './hooks/useSession';
 import { useTextSelection, getSourceLineFromNode } from './hooks/useTextSelection';
 import * as api from './api/client';
@@ -47,6 +48,7 @@ export default function App() {
 
   const [editingSessionPrompt, setEditingSessionPrompt] = useState(false);
   const [editingSessionSearch, setEditingSessionSearch] = useState(false);
+  const [viewingContextMemory, setViewingContextMemory] = useState(false);
   const [fileTreeWidth, setFileTreeWidth] = useState(208);
   const [chatWidth, setChatWidth] = useState(384);
 
@@ -218,6 +220,12 @@ export default function App() {
           >
             工具
           </button>
+          <button
+            onClick={() => setViewingContextMemory(true)}
+            className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-0.5 border border-zinc-700 rounded hover:border-zinc-500 transition-colors"
+          >
+            模型记忆
+          </button>
         </div>
       </div>
 
@@ -289,6 +297,16 @@ export default function App() {
           sessionId={session.id}
           open={editingSessionSearch}
           onClose={() => setEditingSessionSearch(false)}
+        />
+      )}
+
+      {viewingContextMemory && session && (
+        <ContextPreviewModal
+          open={viewingContextMemory}
+          onClose={() => setViewingContextMemory(false)}
+          title="模型记忆"
+          description="这里展示当前 Session 实际会传给模型的上下文模块，以及已持久化的对话 history。"
+          fetchPreview={() => api.getSessionContextMemory(session.id)}
         />
       )}
 

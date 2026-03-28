@@ -8,6 +8,8 @@ import SystemPromptModal from './SystemPromptModal';
 import SessionPromptDraftModal from './SessionPromptDraftModal';
 import LLMConfigModal from './LLMConfigModal';
 import SearchConfigModal from './SearchConfigModal';
+import ContextPreviewModal from '../ContextPreviewModal';
+import * as api from '../../api/client';
 
 interface Props {
   sessions: Session[];
@@ -17,7 +19,9 @@ interface Props {
 
 export default function LandingPage({ sessions, onStart, onLoadSession }: Props) {
   const [conceptInput, setConceptInput] = useState('');
-  const [modal, setModal] = useState<'profile' | 'system-prompt' | 'session-prompt' | 'llm' | 'search' | null>(null);
+  const [modal, setModal] = useState<
+    'profile' | 'system-prompt' | 'session-prompt' | 'llm' | 'search' | 'context-preview' | null
+  >(null);
   const [settingsRefreshKey, setSettingsRefreshKey] = useState(0);
 
   const handleStart = () => {
@@ -84,6 +88,20 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
               onOpenLLM={() => setModal('llm')}
               onOpenSearch={() => setModal('search')}
             />
+            <button
+              onClick={() => setModal('context-preview')}
+              className="mt-3 w-full rounded-2xl border border-zinc-800 bg-zinc-900/80 px-4 py-4 text-left hover:bg-zinc-900 transition-colors"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-zinc-100">上下文预览</div>
+                  <div className="text-xs text-zinc-500 mt-1">
+                    查看新建 Session 时默认会按什么顺序把上下文模块传给模型
+                  </div>
+                </div>
+                <span className="text-xs text-zinc-500">打开</span>
+              </div>
+            </button>
           </div>
 
           {/* Continue learning */}
@@ -102,6 +120,13 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
       <SessionPromptDraftModal open={modal === 'session-prompt'} onClose={handleCloseModal} />
       <LLMConfigModal open={modal === 'llm'} onClose={handleCloseModal} />
       <SearchConfigModal open={modal === 'search'} onClose={handleCloseModal} />
+      <ContextPreviewModal
+        open={modal === 'context-preview'}
+        onClose={handleCloseModal}
+        title="上下文预览"
+        description="这里展示新建 Session 时，Teacher 默认会收到的上下文模板顺序。"
+        fetchPreview={api.getTemplateContextPreview}
+      />
     </div>
   );
 }

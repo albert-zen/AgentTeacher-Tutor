@@ -369,6 +369,59 @@ export async function getContextPreview(sessionId: string): Promise<ContextPrevi
   return res.json();
 }
 
+export type ContextPreviewSectionKind =
+  | 'system_prompt'
+  | 'session_prompt_draft'
+  | 'session_prompt'
+  | 'tool_instructions'
+  | 'profile_blocks'
+  | 'history_turn';
+
+export interface ContextPreviewProcessPart {
+  id: string;
+  kind: 'text' | 'tool-call' | 'tool-result';
+  title: string;
+  content?: string;
+  toolName?: string;
+  args?: Record<string, unknown>;
+  result?: unknown;
+}
+
+export interface ContextPreviewSection {
+  id: string;
+  kind: ContextPreviewSectionKind;
+  title: string;
+  summary: string;
+  sourceLabel?: string;
+  order: number;
+  content?: string;
+  meta?: {
+    tools?: Array<{ id: ToolId; label: string; content: string }>;
+    blocks?: ProfileBlock[];
+    role?: 'user' | 'assistant';
+    createdAt?: string;
+    parts?: ContextPreviewProcessPart[];
+  };
+}
+
+export interface ContextPreviewResponse {
+  sections: ContextPreviewSection[];
+}
+
+export type SessionMemoryResponse = ContextPreviewResponse;
+
+export async function getTemplateContextPreview(): Promise<ContextPreviewResponse> {
+  const res = await fetch(`${BASE}/context-preview/template`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function getSessionContextMemory(sessionId: string): Promise<SessionMemoryResponse> {
+  const res = await fetch(`${BASE}/session/${sessionId}/context-memory`);
+  await assertOk(res);
+  return res.json();
+}
+
 export async function updateContextConfig(
   sessionId: string,
   config: { profileBlockIds?: string[]; toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>> },

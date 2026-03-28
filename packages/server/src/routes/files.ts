@@ -10,13 +10,9 @@ import {
   loadLLMConfig,
   saveLLMConfig,
 } from '../services/llm.js';
-import {
-  loadSearchConfig,
-  loadSessionSearchConfigOverride,
-  saveSearchConfig,
-  saveSessionSearchConfig,
-  clearSessionSearchConfig,
-} from '../services/searchConfig.js';
+import { resolveToolContext, runToolRuntimeAction, updateGlobalToolState, updateSessionToolState } from '../services/toolManager.js';
+import { loadToolConfig } from '../services/toolConfig.js';
+import type { ToolId } from '../services/toolDefinitions.js';
 
 export function createFilesRouter(store: Store, dataDir: string) {
   const router = Router();
@@ -171,18 +167,97 @@ export function createFilesRouter(store: Store, dataDir: string) {
     res.json({ success: true });
   });
 
-  router.get('/search-config', (_req, res) => {
-    res.json(loadSearchConfig(dataDir));
+  router.get('/tools', (_req, res) => {
+    const context = resolveToolContext(dataDir);
+    res.json({
+      tools: context.visibleTools,
+      globalConfig: context.globalConfig,
+    });
   });
 
-  router.put('/search-config', (req, res) => {
-    const { enabled, baseURL, defaultMaxResults, timeoutMs } = req.body;
-    const partial: Record<string, boolean | number | string> = {};
-    if (enabled !== undefined) partial.enabled = Boolean(enabled);
-    if (baseURL !== undefined) partial.baseURL = String(baseURL);
-    if (defaultMaxResults !== undefined) partial.defaultMaxResults = Number(defaultMaxResults);
-    if (timeoutMs !== undefined) partial.timeoutMs = Number(timeoutMs);
-    res.json(saveSearchConfig(dataDir, partial));
+  router.put('/tools/:id', async (req, res) => {
+    const toolId = req.params.id as ToolId;
+    try {
+      const next = await updateGlobalToolState(dataDir, toolId, req.body);
+      res.json({
+        tools: next.visibleTools,
+        globalConfig: next.globalConfig,
+      });
+    } catch (error: unknown) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/tools/:id/runtime/:action', async (req, res) => {
+    const toolId = req.params.id as ToolId;
+    const action = req.params.action as 'start' | 'stop' | 'restart' | 'check';
+    try {
+      const tool = await runToolRuntimeAction(dataDir, toolId, action);
+      res.json(tool);
+    } catch (error: unknown) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.get('/session/:id/tools', (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    const context = resolveToolContext(dataDir, session.id);
+    res.json({
+      tools: context.visibleTools,
+      sessionConfig: context.sessionConfig,
+      globalConfig: context.globalConfig,
+    });
+  });
+
+  router.put('/session/:id/tools', async (req, res) => {
+    const session = store.getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    const { toolId, enabled, override } = req.body as { toolId?: ToolId; enabled?: boolean; override?: boolean };
+    if (!toolId) {
+      res.status(400).json({ error: 'toolId is required' });
+      return;
+    }
+
+    try {
+      const next = await updateSessionToolState(
+        dataDir,
+        session.id,
+        toolId,
+        override === false ? null : { enabled: enabled === undefined ? true : Boolean(enabled) },
+      );
+      res.json({
+        tools: next.visibleTools,
+        sessionConfig: next.sessionConfig,
+        globalConfig: next.globalConfig,
+      });
+    } catch (error: unknown) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Backward-compatible search config aliases backed by Tool Manager
+  router.get('/search-config', (_req, res) => {
+    res.json(loadToolConfig(dataDir).tools.web_search);
+  });
+
+  router.put('/search-config', async (req, res) => {
+    const patch = {
+      enabledByDefault: req.body.enabled,
+      upstream: req.body.baseURL ? { remoteBaseURL: String(req.body.baseURL) } : undefined,
+      defaultMaxResults: req.body.defaultMaxResults === undefined ? undefined : Number(req.body.defaultMaxResults),
+      timeoutMs: req.body.timeoutMs === undefined ? undefined : Number(req.body.timeoutMs),
+    };
+    const next = await updateGlobalToolState(dataDir, 'web_search', patch);
+    res.json(next.globalConfig.tools.web_search);
   });
 
   router.get('/session/:id/search-config', (req, res) => {
@@ -191,39 +266,34 @@ export function createFilesRouter(store: Store, dataDir: string) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-    const localConfig = loadSessionSearchConfigOverride(dataDir, session.id);
+    const context = resolveToolContext(dataDir, session.id);
+    const tool = context.visibleTools.find((item) => item.id === 'web_search');
     res.json({
-      override: !!localConfig,
-      localConfig,
-      effectiveConfig: loadSearchConfig(dataDir, session.id),
+      override: context.sessionConfig.toolOverrides?.web_search?.enabled !== undefined,
+      localConfig: context.sessionConfig.toolOverrides?.web_search ?? null,
+      effectiveConfig: tool?.config,
+      runtimeStatus: tool ? { status: tool.status, message: tool.message } : null,
     });
   });
 
-  router.put('/session/:id/search-config', (req, res) => {
+  router.put('/session/:id/search-config', async (req, res) => {
     const session = store.getSession(req.params.id);
     if (!session) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-
-    const { override, enabled } = req.body;
-    if (!override) {
-      clearSessionSearchConfig(dataDir, session.id);
-      res.json({
-        override: false,
-        localConfig: null,
-        effectiveConfig: loadSearchConfig(dataDir, session.id),
-      });
-      return;
-    }
-
-    const localConfig = saveSessionSearchConfig(dataDir, session.id, {
-      enabled: enabled === undefined ? true : Boolean(enabled),
-    });
+    const next = await updateSessionToolState(
+      dataDir,
+      session.id,
+      'web_search',
+      req.body.override === false ? null : { enabled: req.body.enabled === undefined ? true : Boolean(req.body.enabled) },
+    );
+    const tool = next.visibleTools.find((item) => item.id === 'web_search');
     res.json({
-      override: true,
-      localConfig,
-      effectiveConfig: loadSearchConfig(dataDir, session.id),
+      override: next.sessionConfig.toolOverrides?.web_search?.enabled !== undefined,
+      localConfig: next.sessionConfig.toolOverrides?.web_search ?? null,
+      effectiveConfig: tool?.config,
+      runtimeStatus: tool ? { status: tool.status, message: tool.message } : null,
     });
   });
 

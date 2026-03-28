@@ -14,8 +14,38 @@ import {
 } from '../src/services/contextCompiler.js';
 import { Store } from '../src/db/index.js';
 import { FileService } from '../src/services/fileService.js';
+import type { ToolContext } from '../src/services/toolManager.js';
 
 let tempDir: string;
+
+function emptyToolContext(): ToolContext {
+  return {
+    enabledTools: [],
+    visibleTools: [],
+    promptFragments: [],
+    globalConfig: {
+      version: 1,
+      tools: {
+        read_file: { enabledByDefault: true, runtimeMode: 'builtin' },
+        write_file: { enabledByDefault: true, runtimeMode: 'builtin' },
+        web_search: {
+          enabledByDefault: false,
+          runtimeMode: 'managed',
+          sidecar: { port: 18080 },
+          backend: { port: 18081 },
+          upstream: { provider: 'searxng', remoteBaseURL: 'http://127.0.0.1:8080' },
+          timeoutMs: 8000,
+          defaultMaxResults: 5,
+          allowedCategories: ['general', 'it', 'science', 'news'],
+          allowedEngines: [],
+          persistResultsByDefault: false,
+        },
+        browser: { enabledByDefault: false, runtimeMode: 'managed' },
+      },
+    },
+    sessionConfig: {},
+  };
+}
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'teacher-ctx-'));
@@ -248,29 +278,55 @@ describe('formatSelection', () => {
 
 describe('formatSystemMessage', () => {
   it('includes all sections when all present', () => {
-    const result = formatSystemMessage('sys', 'sess', 'profile data');
+    const result = formatSystemMessage('sys', 'sess', 'profile data', emptyToolContext());
     expect(result).toContain('<system_prompt>\nsys\n</system_prompt>');
     expect(result).toContain('<session_prompt>\nsess\n</session_prompt>');
     expect(result).toContain('<profile_blocks>\nprofile data\n</profile_blocks>');
   });
 
   it('omits session_prompt when null', () => {
-    const result = formatSystemMessage('sys', null, 'profile');
+    const result = formatSystemMessage('sys', null, 'profile', emptyToolContext());
     expect(result).toContain('<system_prompt>');
     expect(result).not.toContain('<session_prompt>');
     expect(result).toContain('<profile_blocks>');
   });
 
   it('omits profile_blocks when empty string', () => {
-    const result = formatSystemMessage('sys', 'sess', '');
+    const result = formatSystemMessage('sys', 'sess', '', emptyToolContext());
     expect(result).toContain('<system_prompt>');
     expect(result).toContain('<session_prompt>');
     expect(result).not.toContain('<profile_blocks>');
   });
 
   it('returns only system_prompt when others missing', () => {
-    const result = formatSystemMessage('sys only', null, '');
+    const result = formatSystemMessage('sys only', null, '', emptyToolContext());
     expect(result).toBe('<system_prompt>\nsys only\n</system_prompt>');
+  });
+
+  it('injects enabled tools and tool instructions when provided', () => {
+    const toolContext: ToolContext = {
+      ...emptyToolContext(),
+      enabledTools: [
+        {
+          id: 'read_file',
+          label: '读文件',
+          description: 'Read',
+          enabled: true,
+          exposeToModel: true,
+          uiVisible: true,
+          runtimeMode: 'builtin',
+          status: 'ready',
+          config: { enabledByDefault: true, runtimeMode: 'builtin' },
+          sessionOverride: null,
+        },
+      ],
+      promptFragments: [{ id: 'read_file', label: '读文件', content: 'Use read_file wisely.' }],
+    };
+
+    const result = formatSystemMessage('sys', null, '', toolContext);
+    expect(result).toContain('<enabled_tools>\nread_file: 读文件\n</enabled_tools>');
+    expect(result).toContain('<tool_instructions>');
+    expect(result).toContain('Use read_file wisely.');
   });
 });
 
@@ -406,6 +462,9 @@ describe('compileContext integration', () => {
     expect(result.messages[0]).toEqual({ role: 'user', content: 'hello' });
     expect(result.messages[1]).toEqual({ role: 'assistant', content: 'welcome' });
     expect(result.messages[2].content).toContain('<selection');
+    expect(result.system).toContain('<enabled_tools>');
+    expect(result.enabledTools).toContain('read_file');
+    expect(result.enabledTools).toContain('write_file');
   });
 
   it('works with no optional files (minimal setup)', () => {
@@ -435,5 +494,21 @@ describe('compileContext integration', () => {
     expect(result.resolvedUserContent).toContain('<selection');
     expect(result.resolvedUserContent).toContain('notes.md');
     expect(result.resolvedUserContent).toContain('line1');
+  });
+
+  it('removes disabled tool instructions from the compiled system message', () => {
+    const store = new Store(tempDir);
+    const sessionId = 'tool-sess';
+    store.createSession({ id: sessionId, concept: 'tools', createdAt: new Date().toISOString() });
+    writeFileSync(
+      join(tempDir, sessionId, 'context-config.json'),
+      JSON.stringify({ toolOverrides: { read_file: { enabled: false } } }),
+    );
+
+    const result = compileContext(tempDir, store, sessionId, 'plain question');
+
+    expect(result.enabledTools).not.toContain('read_file');
+    expect(result.system).not.toContain('## read_file');
+    expect(result.system).toContain('## write_file');
   });
 });

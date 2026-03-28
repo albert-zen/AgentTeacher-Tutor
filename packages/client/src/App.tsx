@@ -216,7 +216,7 @@ export default function App() {
             onClick={() => setEditingSessionSearch(true)}
             className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-0.5 border border-zinc-700 rounded hover:border-zinc-500 transition-colors"
           >
-            联网搜索
+            工具
           </button>
         </div>
       </div>

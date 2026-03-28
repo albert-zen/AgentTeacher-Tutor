@@ -1,58 +1,80 @@
-# SearXNG Search Integration
+# Tool Manager And Managed Web Search
 
-This project can expose a `web_search` tool to the Teacher Agent through a self-hosted SearXNG instance.
+This branch upgrades the old standalone search configuration into a unified Tool Manager.
 
 ## What Gets Added
 
-- Global search config: `data/search-config.json`
-- Session override config: `data/<sessionId>/search-config.json`
-- Teacher tool: `web_search`
+- Global tool config: `data/tool-config.json`
+- Session tool overrides: `data/<sessionId>/context-config.json`
+- Tool metadata and prompt fragments: `data/tools/<toolId>.json` and `data/tools/<toolId>.md`
+- Managed local `web_search` sidecar with lazy start
 
-The Teacher keeps using `write_file` to persist valuable search findings into `references/` or any other session file.
+The v1 Tool Manager actively manages three tools:
 
-## Minimal Local Setup
+- `read_file`
+- `write_file`
+- `web_search`
 
-Run a standalone SearXNG instance on your machine, for example with Docker:
+`browser` exists only as a reserved definition for future work and is not exposed in the UI or model tool registry yet.
 
-```bash
-docker run --name searxng -d -p 8080:8080 docker.io/searxng/searxng:latest
-```
+## How It Works
 
-Then open the app settings and set:
+- Tool enablement is resolved as `global default + session override`.
+- Enabled tools are injected into the context compiler via:
+  - `<enabled_tools>`
+  - `<tool_instructions>`
+- Disabled tools are removed from both prompt injection and runtime tool registration.
+- `web_search` can run in:
+  - `managed` mode: use the local sidecar on `127.0.0.1:<port>`
+  - `external` mode: call the upstream search provider directly
 
-- `Enable web search` = on
-- `Base URL` = `http://127.0.0.1:8080`
+## Default Web Search Runtime
 
-## Config Files
-
-Example global config:
+By default, `web_search` is configured as:
 
 ```json
 {
-  "enabled": true,
-  "provider": "searxng",
-  "baseURL": "http://127.0.0.1:8080",
-  "defaultMaxResults": 5,
+  "enabledByDefault": false,
+  "runtimeMode": "managed",
+  "sidecar": {
+    "port": 18080
+  },
+  "backend": {
+    "port": 18081
+  },
+  "upstream": {
+    "provider": "searxng",
+    "remoteBaseURL": "http://127.0.0.1:8080"
+  },
   "timeoutMs": 8000,
+  "defaultMaxResults": 5,
   "allowedCategories": ["general", "it", "science", "news"],
   "allowedEngines": [],
   "persistResultsByDefault": false
 }
 ```
 
-Example session override:
+In `managed` mode, the local backend and sidecar are started lazily on first actual `web_search` execution.
 
-```json
-{
-  "enabled": false
-}
-```
+The backend exposes:
 
-When a session override file is absent, the Teacher inherits the global config.
+- `GET /health`
+- `POST /search`
 
-## Behavior Notes
+The sidecar exposes:
 
-- If global search is disabled, `web_search` returns a clear disabled error.
-- Session overrides only control whether search is enabled for that session in the current UI.
-- Search results are trimmed, deduplicated by URL, and returned as structured items with title, url, snippet, source, and optional published timestamp.
-- `fetch_url` is intentionally not included in v1.
+- `GET /health`
+- `POST /search`
+
+The backend owns remote provider access, while the sidecar remains the tool-facing adapter. Tool Manager now supervises both processes so the app can report whether the managed search stack is actually ready.
+
+## Migration Notes
+
+- Old `data/search-config.json` values are migrated into `tool-config.json.tools.web_search` when read.
+- Legacy `/api/search-config` endpoints still work as compatibility aliases, but the new UI uses `/api/tools` and `/api/session/:id/tools`.
+
+## Persistence Notes
+
+- Tool prompt fragments live in `data/tools/` so they stay editable and align with the app's “Everything is a file” direction.
+- Search findings are still persisted through `write_file` into `references/` or any other session file.
+- `fetch_url` is intentionally still out of scope for this branch.

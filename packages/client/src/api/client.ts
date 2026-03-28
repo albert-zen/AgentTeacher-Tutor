@@ -203,21 +203,73 @@ export interface LLMStatus {
   baseURL: string;
 }
 
-export interface SearchConfig {
-  enabled: boolean;
-  provider: 'searxng';
-  baseURL: string;
-  defaultMaxResults: number;
+export type ToolId = 'read_file' | 'write_file' | 'web_search' | 'browser';
+export type ToolRuntimeMode = 'builtin' | 'managed' | 'external';
+export type ToolRuntimeStatus = 'disabled' | 'stopped' | 'starting' | 'ready' | 'error';
+
+export interface BuiltinToolConfig {
+  enabledByDefault: boolean;
+  runtimeMode: 'builtin';
+}
+
+export interface WebSearchToolConfig {
+  enabledByDefault: boolean;
+  runtimeMode: 'managed' | 'external';
+  sidecar: {
+    port: number;
+  };
+  backend: {
+    port: number;
+  };
+  upstream: {
+    provider: 'searxng';
+    remoteBaseURL: string;
+  };
   timeoutMs: number;
+  defaultMaxResults: number;
   allowedCategories: string[];
   allowedEngines: string[];
   persistResultsByDefault: boolean;
 }
 
-export interface SessionSearchConfigState {
-  override: boolean;
-  localConfig: { enabled?: boolean } | null;
-  effectiveConfig: SearchConfig;
+export interface BrowserToolConfig {
+  enabledByDefault: boolean;
+  runtimeMode: 'managed' | 'external';
+}
+
+export type ToolConfig = BuiltinToolConfig | WebSearchToolConfig | BrowserToolConfig;
+
+export interface ToolState {
+  id: ToolId;
+  label: string;
+  description: string;
+  enabled: boolean;
+  exposeToModel: boolean;
+  uiVisible: boolean;
+  runtimeMode: ToolRuntimeMode;
+  status: ToolRuntimeStatus;
+  message?: string;
+  config: ToolConfig;
+  sessionOverride?: { enabled?: boolean } | null;
+}
+
+export interface ToolConfigFile {
+  version: 1;
+  tools: Record<ToolId, ToolConfig>;
+}
+
+export interface SessionContextConfig {
+  profileBlockIds?: string[];
+  toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>>;
+}
+
+export interface ToolsResponse {
+  tools: ToolState[];
+  globalConfig: ToolConfigFile;
+}
+
+export interface SessionToolsResponse extends ToolsResponse {
+  sessionConfig: SessionContextConfig;
 }
 
 export async function getLLMStatus(): Promise<LLMStatus> {
@@ -241,41 +293,51 @@ export async function updateLLMConfig(config: {
   return res.json();
 }
 
-export async function getSearchConfig(): Promise<SearchConfig> {
-  const res = await fetch(`${BASE}/search-config`);
+export async function getTools(): Promise<ToolsResponse> {
+  const res = await fetch(`${BASE}/tools`);
   await assertOk(res);
   return res.json();
 }
 
-export async function updateSearchConfig(config: {
-  enabled?: boolean;
-  baseURL?: string;
-  defaultMaxResults?: number;
-  timeoutMs?: number;
-}): Promise<SearchConfig> {
-  const res = await fetch(`${BASE}/search-config`, {
+export async function updateTool(
+  toolId: ToolId,
+  patch: Partial<ToolConfig>,
+): Promise<ToolsResponse> {
+  const res = await fetch(`${BASE}/tools/${toolId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
+    body: JSON.stringify(patch),
   });
   await assertOk(res);
   return res.json();
 }
 
-export async function getSessionSearchConfig(sessionId: string): Promise<SessionSearchConfigState> {
-  const res = await fetch(`${BASE}/session/${sessionId}/search-config`);
+export async function runToolRuntimeAction(
+  toolId: ToolId,
+  action: 'start' | 'stop' | 'restart' | 'check',
+): Promise<ToolState> {
+  const res = await fetch(`${BASE}/tools/${toolId}/runtime/${action}`, {
+    method: 'POST',
+  });
   await assertOk(res);
   return res.json();
 }
 
-export async function updateSessionSearchConfig(
+export async function getSessionTools(sessionId: string): Promise<SessionToolsResponse> {
+  const res = await fetch(`${BASE}/session/${sessionId}/tools`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function updateSessionTool(
   sessionId: string,
   config: {
+    toolId: ToolId;
     override: boolean;
     enabled?: boolean;
-  },
-): Promise<SessionSearchConfigState> {
-  const res = await fetch(`${BASE}/session/${sessionId}/search-config`, {
+  }
+): Promise<SessionToolsResponse> {
+  const res = await fetch(`${BASE}/session/${sessionId}/tools`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
@@ -299,6 +361,8 @@ export interface ContextPreview {
   systemPrompt: string;
   profileBlocks: ProfileBlock[];
   selectedProfileContent: string;
+  enabledTools?: { id: ToolId; label: string }[];
+  toolInstructions?: string;
 }
 
 export async function getContextPreview(sessionId: string): Promise<ContextPreview> {
@@ -307,7 +371,10 @@ export async function getContextPreview(sessionId: string): Promise<ContextPrevi
   return res.json();
 }
 
-export async function updateContextConfig(sessionId: string, config: { profileBlockIds?: string[] }): Promise<void> {
+export async function updateContextConfig(
+  sessionId: string,
+  config: { profileBlockIds?: string[]; toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>> },
+): Promise<void> {
   const res = await fetch(`${BASE}/session/${sessionId}/context-config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

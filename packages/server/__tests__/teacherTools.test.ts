@@ -12,7 +12,7 @@ let tools: ReturnType<typeof buildTools>;
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'teacher-tools-test-'));
   fileService = new FileService(tempDir);
-  tools = buildTools(fileService);
+  tools = buildTools(fileService, tempDir, 'session-1', ['read_file', 'write_file']);
 });
 
 afterEach(() => {
@@ -67,5 +67,12 @@ describe('tool 执行', () => {
     );
     expect(result.success).toBe(false);
     expect((result as { error: string }).error).toMatch(/path/i);
+  });
+
+  it('can exclude tools from the registry when they are disabled', () => {
+    const limitedTools = buildTools(fileService, tempDir, 'session-1', ['read_file']);
+    expect(limitedTools.read_file).toBeDefined();
+    expect('write_file' in limitedTools).toBe(false);
+    expect('web_search' in limitedTools).toBe(false);
   });
 });

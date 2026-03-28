@@ -5,6 +5,7 @@ import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { FileService } from './fileService.js';
 import { searchWeb } from './searchService.js';
+import type { ToolId } from './toolDefinitions.js';
 
 export interface LLMConfig {
   provider: string;
@@ -57,9 +58,11 @@ export function createLLMClient(config: LLMConfig) {
   return openai.chat(config.model);
 }
 
-export function buildTools(fileService: FileService, dataDir: string, sessionId: string) {
+export function buildTools(fileService: FileService, dataDir: string, sessionId: string, enabledTools: ToolId[]) {
   return {
-    read_file: tool({
+    ...(enabledTools.includes('read_file')
+      ? {
+          read_file: tool({
       description: 'Read a file or specific line range from the session workspace.',
       inputSchema: z.object({
         path: z.string().describe('Relative file path'),
@@ -74,8 +77,12 @@ export function buildTools(fileService: FileService, dataDir: string, sessionId:
           return { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       },
-    }),
-    write_file: tool({
+          }),
+        }
+      : {}),
+    ...(enabledTools.includes('write_file')
+      ? {
+          write_file: tool({
       description:
         'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
       inputSchema: z.object({
@@ -92,8 +99,12 @@ export function buildTools(fileService: FileService, dataDir: string, sessionId:
           return { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       },
-    }),
-    web_search: tool({
+          }),
+        }
+      : {}),
+    ...(enabledTools.includes('web_search')
+      ? {
+          web_search: tool({
       description: 'Search the web for up-to-date information and source links.',
       inputSchema: z.object({
         query: z.string().describe('Search query'),
@@ -106,7 +117,9 @@ export function buildTools(fileService: FileService, dataDir: string, sessionId:
           .describe('Optional recency window for time-sensitive queries'),
       }),
       execute: async (args) => searchWeb(dataDir, sessionId, args),
-    }),
+          }),
+        }
+      : {}),
   };
 }
 
@@ -115,12 +128,6 @@ export function getSystemPrompt(): string {
 
 ## Your Role
 You teach by creating structured learning materials and guiding students through concepts step by step.
-
-## Your Tools
-You have three tools:
-- **read_file**: Read a file or specific line range to review content
-- **write_file**: Create or modify files in the session workspace
-- **web_search**: Search the web for up-to-date information and source links
 
 ## Key Files You Manage
 - **ground-truth.md**: Your comprehensive, systematic understanding of the concept. Students can see this file and ask about it. You may update it as your understanding evolves during teaching.
@@ -152,9 +159,7 @@ If student profile information is provided, adapt your teaching style, examples,
 - Be encouraging but honest about gaps in understanding
 - Use analogies and examples relevant to the student's background
 - When updating guidance.md, you can modify just the relevant section OR restructure the entire document — use your judgment
-- Use web_search only when the student needs up-to-date information, external references, or official documentation
-- Prefer a small number of high-quality results and mention sources when search results inform your answer
-- If search results are valuable for future work in this session, you may save them into references/ using write_file
+- Tool-specific instructions may be injected separately based on the currently enabled tools
 - Always respond in the same language the student uses`;
 }
 
@@ -198,8 +203,9 @@ export async function streamTeacherResponse(
   sessionId: string,
   messages: ModelMessage[],
   systemPrompt: string,
+  enabledTools: ToolId[],
 ) {
-  const tools = buildTools(fileService, dataDir, sessionId);
+  const tools = buildTools(fileService, dataDir, sessionId, enabledTools);
 
   return streamText({
     model,

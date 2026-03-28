@@ -77,59 +77,61 @@ describe('Session prompt draft routes', () => {
   });
 });
 
-describe('Search config routes', () => {
-  it('GET /api/search-config returns defaults when no config exists', async () => {
-    const res = await request(app).get('/api/search-config');
+describe('Tool manager routes', () => {
+  it('GET /api/tools returns the visible tools and global config', async () => {
+    const res = await request(app).get('/api/tools');
     expect(res.status).toBe(200);
-    expect(res.body.provider).toBe('searxng');
-    expect(res.body.enabled).toBe(false);
+    expect(res.body.tools.map((tool: { id: string }) => tool.id)).toEqual(['read_file', 'write_file', 'web_search']);
+    expect(res.body.globalConfig.tools.web_search.runtimeMode).toBeDefined();
   });
 
-  it('PUT /api/search-config persists global search config', async () => {
-    const put = await request(app).put('/api/search-config').send({
-      enabled: true,
-      baseURL: 'http://localhost:9999',
+  it('PUT /api/tools/:id persists global tool config', async () => {
+    const put = await request(app).put('/api/tools/web_search').send({
+      enabledByDefault: true,
+      runtimeMode: 'external',
+      upstream: { remoteBaseURL: 'http://localhost:9999' },
       defaultMaxResults: 7,
       timeoutMs: 9000,
     });
     expect(put.status).toBe(200);
-    expect(put.body.enabled).toBe(true);
-    expect(put.body.baseURL).toBe('http://localhost:9999');
+    expect(put.body.globalConfig.tools.web_search.enabledByDefault).toBe(true);
+    expect(put.body.globalConfig.tools.web_search.upstream.remoteBaseURL).toBe('http://localhost:9999');
 
-    const get = await request(app).get('/api/search-config');
-    expect(get.body.enabled).toBe(true);
-    expect(get.body.defaultMaxResults).toBe(7);
+    const get = await request(app).get('/api/tools');
+    expect(get.body.globalConfig.tools.web_search.enabledByDefault).toBe(true);
+    expect(get.body.globalConfig.tools.web_search.defaultMaxResults).toBe(7);
   });
 
-  it('GET /api/session/:id/search-config returns effective config and override metadata', async () => {
+  it('GET /api/session/:id/tools returns effective tool states and overrides', async () => {
     const id = await createTestSession();
-    await request(app).put('/api/search-config').send({ enabled: true });
+    await request(app).put('/api/tools/web_search').send({ enabledByDefault: true });
 
-    const res = await request(app).get(`/api/session/${id}/search-config`);
+    const res = await request(app).get(`/api/session/${id}/tools`);
     expect(res.status).toBe(200);
-    expect(res.body.override).toBe(false);
-    expect(res.body.localConfig).toBeNull();
-    expect(res.body.effectiveConfig.enabled).toBe(true);
+    expect(res.body.sessionConfig.toolOverrides ?? {}).toEqual({});
+    expect(res.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(true);
   });
 
-  it('PUT /api/session/:id/search-config saves and clears a session override', async () => {
+  it('PUT /api/session/:id/tools saves and clears a session override', async () => {
     const id = await createTestSession();
-    await request(app).put('/api/search-config').send({ enabled: true });
+    await request(app).put('/api/tools/web_search').send({ enabledByDefault: true });
 
-    const put = await request(app).put(`/api/session/${id}/search-config`).send({
+    const put = await request(app).put(`/api/session/${id}/tools`).send({
+      toolId: 'web_search',
       override: true,
       enabled: false,
     });
     expect(put.status).toBe(200);
-    expect(put.body.override).toBe(true);
-    expect(put.body.localConfig).toEqual({ enabled: false });
-    expect(put.body.effectiveConfig.enabled).toBe(false);
+    expect(put.body.sessionConfig.toolOverrides.web_search).toEqual({ enabled: false });
+    expect(put.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(false);
 
-    const clear = await request(app).put(`/api/session/${id}/search-config`).send({ override: false });
+    const clear = await request(app).put(`/api/session/${id}/tools`).send({
+      toolId: 'web_search',
+      override: false,
+    });
     expect(clear.status).toBe(200);
-    expect(clear.body.override).toBe(false);
-    expect(clear.body.localConfig).toBeNull();
-    expect(clear.body.effectiveConfig.enabled).toBe(true);
+    expect(clear.body.sessionConfig.toolOverrides ?? {}).toEqual({});
+    expect(clear.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(true);
   });
 });
 

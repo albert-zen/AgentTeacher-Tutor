@@ -7,6 +7,8 @@ import { getSystemPrompt, resolveSystemPrompt } from './llm.js';
 import { FileService } from './fileService.js';
 import { parseReferences, type FileReference } from './referenceParser.js';
 import { parseProfileBlocks, type ProfileBlock } from './profileParser.js';
+import { resolveToolContext } from './toolManager.js';
+import type { ToolId } from './toolDefinitions.js';
 
 // ─── Existing exports (assembleContext, used by context-preview endpoint) ────
 
@@ -18,10 +20,13 @@ export interface AssembledContext {
   systemPrompt: string;
   profileBlocks: ProfileBlock[];
   selectedProfileContent: string;
+  enabledTools?: { id: ToolId; label: string }[];
+  toolInstructions?: string;
 }
 
 export function assembleContext(dataDir: string, sessionId: string, config?: ContextConfig): AssembledContext {
   const systemPrompt = resolveSystemPrompt(dataDir, sessionId);
+  const toolContext = resolveToolContext(dataDir, sessionId);
 
   let profileBlocks: ProfileBlock[] = [];
   const profilePath = join(dataDir, 'profile.md');
@@ -38,7 +43,13 @@ export function assembleContext(dataDir: string, sessionId: string, config?: Con
   const selectedProfileContent =
     selectedBlocks.length > 0 ? selectedBlocks.map((b) => `## ${b.name}\n${b.content}`).join('\n\n') : '';
 
-  return { systemPrompt, profileBlocks, selectedProfileContent };
+  return {
+    systemPrompt,
+    profileBlocks,
+    selectedProfileContent,
+    enabledTools: toolContext.enabledTools.map((tool) => ({ id: tool.id, label: tool.label })),
+    toolInstructions: toolContext.promptFragments.map((fragment) => fragment.content).join('\n\n'),
+  };
 }
 
 // ─── New: compileContext and the 5-stage pipeline ────────────────────────────
@@ -47,6 +58,7 @@ export interface CompileResult {
   system: string;
   messages: ModelMessage[];
   resolvedUserContent: string;
+  enabledTools: ToolId[];
 }
 
 // Stage 1: Resolve system prompt and session prompt separately
@@ -181,6 +193,7 @@ export function formatSystemMessage(
   systemPrompt: string,
   sessionPrompt: string | null,
   profileContent: string,
+  toolContext: ReturnType<typeof resolveToolContext>,
 ): string {
   let result = `<system_prompt>\n${systemPrompt}\n</system_prompt>`;
 
@@ -190,6 +203,18 @@ export function formatSystemMessage(
 
   if (profileContent) {
     result += `\n\n<profile_blocks>\n${profileContent}\n</profile_blocks>`;
+  }
+
+  if (toolContext.enabledTools.length > 0) {
+    const enabledTools = toolContext.enabledTools.map((tool) => `${tool.id}: ${tool.label}`).join('\n');
+    result += `\n\n<enabled_tools>\n${enabledTools}\n</enabled_tools>`;
+  }
+
+  if (toolContext.promptFragments.length > 0) {
+    const instructions = toolContext.promptFragments
+      .map((fragment) => `<tool id="${fragment.id}">\n${fragment.content}\n</tool>`)
+      .join('\n\n');
+    result += `\n\n<tool_instructions>\n${instructions}\n</tool_instructions>`;
   }
 
   return result;
@@ -212,9 +237,15 @@ export function buildMessages(store: Store, sessionId: string, resolvedUserConte
 export function compileContext(dataDir: string, store: Store, sessionId: string, userMessage: string): CompileResult {
   const { systemPrompt, sessionPrompt } = resolvePromptsSeparately(dataDir, sessionId);
   const profileContent = selectProfileContent(dataDir, sessionId);
+  const toolContext = resolveToolContext(dataDir, sessionId);
   const sessionDir = join(dataDir, sessionId);
   const resolvedUserContent = resolveReferences(sessionDir, userMessage);
-  const system = formatSystemMessage(systemPrompt, sessionPrompt, profileContent);
+  const system = formatSystemMessage(systemPrompt, sessionPrompt, profileContent, toolContext);
   const messages = buildMessages(store, sessionId, resolvedUserContent);
-  return { system, messages, resolvedUserContent };
+  return {
+    system,
+    messages,
+    resolvedUserContent,
+    enabledTools: toolContext.enabledTools.map((tool) => tool.id),
+  };
 }

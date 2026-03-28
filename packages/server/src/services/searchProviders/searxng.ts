@@ -1,5 +1,3 @@
-import type { SearchConfig } from '../searchConfig.js';
-
 export interface SearXNGSearchResult {
   title?: string;
   url?: string;
@@ -49,8 +47,4 @@ export async function searchSearXNG({
   }
 
   return (await response.json()) as SearXNGSearchResponse;
-}
-
-export function isSearXNGProvider(config: SearchConfig): config is SearchConfig & { provider: 'searxng' } {
-  return config.provider === 'searxng';
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as api from '../../api/client';
-import type { LLMStatus, SearchConfig } from '../../api/client';
+import type { LLMStatus, ToolsResponse } from '../../api/client';
 
 interface Props {
   onOpenProfile: () => void;
@@ -20,7 +20,7 @@ export default function SettingsCards({
   refreshKey = 0,
 }: Props) {
   const [llmStatus, setLlmStatus] = useState<LLMStatus | null>(null);
-  const [searchConfig, setSearchConfig] = useState<SearchConfig | null>(null);
+  const [toolsState, setToolsState] = useState<ToolsResponse | null>(null);
 
   useEffect(() => {
     api
@@ -28,8 +28,8 @@ export default function SettingsCards({
       .then(setLlmStatus)
       .catch(() => {});
     api
-      .getSearchConfig()
-      .then(setSearchConfig)
+      .getTools()
+      .then(setToolsState)
       .catch(() => {});
   }, [refreshKey]);
 
@@ -60,10 +60,20 @@ export default function SettingsCards({
 
       <CardButton onClick={onOpenSearch}>
         <div className="flex items-center justify-between">
-          <CardLabel sub={searchConfig?.provider ?? 'searxng'}>联网搜索</CardLabel>
-          {searchConfig && (
+          <CardLabel
+            sub={`${toolsState?.tools.filter((tool) => tool.enabled).length ?? 0} / ${toolsState?.tools.length ?? 3} enabled`}
+          >
+            工具
+          </CardLabel>
+          {toolsState && (
             <span
-              className={`w-2 h-2 rounded-full shrink-0 ${searchConfig.enabled ? 'bg-emerald-400 shadow-[0_0_6px_theme(--color-emerald-400)]' : 'bg-zinc-600'}`}
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                toolsState.tools.some((tool) => tool.status === 'error')
+                  ? 'bg-red-400 shadow-[0_0_6px_theme(--color-red-400)]'
+                  : toolsState.tools.some((tool) => tool.enabled)
+                    ? 'bg-emerald-400 shadow-[0_0_6px_theme(--color-emerald-400)]'
+                    : 'bg-zinc-600'
+              }`}
             />
           )}
         </div>

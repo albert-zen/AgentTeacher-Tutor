@@ -7,6 +7,7 @@ import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseMilestones } from '../services/milestonesParser.js';
 import { assembleContext } from '../services/contextCompiler.js';
+import { loadSessionContextConfig, saveSessionContextConfig } from '../services/toolConfig.js';
 
 const DEFAULT_MESSAGE_PAGE_SIZE = 50;
 const MAX_MESSAGE_PAGE_SIZE = 100;
@@ -106,17 +107,7 @@ export function createSessionRouter(store: Store, dataDir: string) {
       return;
     }
 
-    let config = undefined;
-    const configPath = join(dataDir, session.id, 'context-config.json');
-    if (existsSync(configPath)) {
-      try {
-        config = JSON.parse(readFileSync(configPath, 'utf-8'));
-      } catch {
-        /* use defaults */
-      }
-    }
-
-    const context = assembleContext(dataDir, session.id, config);
+    const context = assembleContext(dataDir, session.id, loadSessionContextConfig(dataDir, session.id));
     res.json(context);
   });
 
@@ -127,8 +118,7 @@ export function createSessionRouter(store: Store, dataDir: string) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-    const configPath = join(dataDir, session.id, 'context-config.json');
-    writeFileSync(configPath, JSON.stringify(req.body, null, 2));
+    saveSessionContextConfig(dataDir, session.id, req.body);
     res.json({ success: true });
   });
 

@@ -1,57 +1,58 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import {
-  clearSessionSearchConfig,
-  defaultSearchConfig,
-  loadSearchConfig,
-  loadSessionSearchConfigOverride,
-  saveSearchConfig,
-  saveSessionSearchConfig,
-} from '../src/services/searchConfig.js';
+  defaultToolConfig,
+  loadSessionContextConfig,
+  loadToolConfig,
+  resolveToolEnabled,
+  updateSessionToolOverride,
+  updateToolConfig,
+} from '../src/services/toolConfig.js';
 
 let tempDir: string;
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), 'teacher-search-config-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'teacher-tool-config-'));
 });
 
 afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
 });
 
-describe('searchConfig', () => {
-  it('returns defaults when no config files exist', () => {
-    expect(loadSearchConfig(tempDir)).toEqual(defaultSearchConfig);
+describe('toolConfig', () => {
+  it('returns defaults when no tool config exists', () => {
+    expect(loadToolConfig(tempDir)).toEqual(defaultToolConfig);
   });
 
-  it('merges global config with session overrides', () => {
-    saveSearchConfig(tempDir, {
-      enabled: true,
-      baseURL: 'http://localhost:9999',
-      defaultMaxResults: 7,
-    });
-    saveSessionSearchConfig(tempDir, 'session-1', {
-      enabled: false,
-      timeoutMs: 2000,
-    });
+  it('migrates legacy search-config.json into web_search settings', () => {
+    writeFileSync(
+      join(tempDir, 'search-config.json'),
+      JSON.stringify({
+        enabled: true,
+        baseURL: 'http://legacy-search.local',
+        defaultMaxResults: 7,
+        timeoutMs: 5000,
+      }),
+    );
 
-    expect(loadSearchConfig(tempDir, 'session-1')).toMatchObject({
-      enabled: false,
-      baseURL: 'http://localhost:9999',
-      defaultMaxResults: 7,
-      timeoutMs: 2000,
-    });
+    const config = loadToolConfig(tempDir);
+
+    expect(config.tools.web_search.enabledByDefault).toBe(true);
+    expect(config.tools.web_search.upstream.remoteBaseURL).toBe('http://legacy-search.local');
+    expect(config.tools.web_search.defaultMaxResults).toBe(7);
+    expect(config.tools.web_search.timeoutMs).toBe(5000);
   });
 
-  it('returns null when no session override exists and clears override files', () => {
-    expect(loadSessionSearchConfigOverride(tempDir, 'session-1')).toBeNull();
+  it('applies session tool overrides on top of global defaults', () => {
+    updateToolConfig(tempDir, 'web_search', { enabledByDefault: true });
+    updateSessionToolOverride(tempDir, 'session-1', 'web_search', { enabled: false });
 
-    saveSessionSearchConfig(tempDir, 'session-1', { enabled: false });
-    expect(loadSessionSearchConfigOverride(tempDir, 'session-1')).toEqual({ enabled: false });
+    const globalConfig = loadToolConfig(tempDir);
+    const sessionConfig = loadSessionContextConfig(tempDir, 'session-1');
 
-    clearSessionSearchConfig(tempDir, 'session-1');
-    expect(loadSessionSearchConfigOverride(tempDir, 'session-1')).toBeNull();
+    expect(resolveToolEnabled(globalConfig, sessionConfig, 'web_search')).toBe(false);
+    expect(resolveToolEnabled(globalConfig, sessionConfig, 'read_file')).toBe(true);
   });
 });

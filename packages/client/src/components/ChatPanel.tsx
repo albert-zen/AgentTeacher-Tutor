@@ -103,6 +103,11 @@ function toolLabel(part: MessagePart & { type: 'tool-call' | 'tool-result' }): s
   if (part.toolName === 'read_file') return `Read ${resultPath ?? 'file'}`;
   if (part.toolName === 'write_file') return `Wrote ${resultPath ?? 'file'}`;
   if (part.toolName === 'web_search') {
+    const success = ((part.result as Record<string, unknown>)?.success as boolean | undefined) ?? false;
+    const error = (part.result as Record<string, unknown>)?.error as string | undefined;
+    if (!success) {
+      return error ? `Search failed: ${error}` : 'Search failed';
+    }
     const results = ((((part.result as Record<string, unknown>)?.data as Record<string, unknown>)?.results ??
       []) as unknown[])?.length;
     return `Found ${results ?? 0} results`;

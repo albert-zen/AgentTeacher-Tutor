@@ -11,7 +11,7 @@ import {
   saveLLMConfig,
 } from '../services/llm.js';
 import { resolveToolContext, runToolRuntimeAction, updateGlobalToolState, updateSessionToolState } from '../services/toolManager.js';
-import { loadToolConfig } from '../services/toolConfig.js';
+import { loadSessionTemplateConfig, loadToolConfig, saveSessionTemplateConfig } from '../services/toolConfig.js';
 import type { ToolId } from '../services/toolDefinitions.js';
 import { buildTemplateContextPreview } from '../services/contextPreview.js';
 
@@ -178,6 +178,14 @@ export function createFilesRouter(store: Store, dataDir: string) {
 
   router.get('/context-preview/template', (_req, res) => {
     res.json(buildTemplateContextPreview(dataDir));
+  });
+
+  router.get('/session-template-config', (_req, res) => {
+    res.json(loadSessionTemplateConfig(dataDir));
+  });
+
+  router.put('/session-template-config', (req, res) => {
+    res.json(saveSessionTemplateConfig(dataDir, req.body));
   });
 
   router.put('/tools/:id', async (req, res) => {

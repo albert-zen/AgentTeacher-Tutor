@@ -62,6 +62,18 @@ describe('Context preview routes', () => {
       'profile_blocks',
     ]);
   });
+
+  it('GET/PUT /api/session-template-config persists new-session draft profile selection', async () => {
+    const put = await request(app).put('/api/session-template-config').send({
+      profileBlockIds: ['目标'],
+    });
+    expect(put.status).toBe(200);
+    expect(put.body.profileBlockIds).toEqual(['目标']);
+
+    const get = await request(app).get('/api/session-template-config');
+    expect(get.status).toBe(200);
+    expect(get.body.profileBlockIds).toEqual(['目标']);
+  });
 });
 
 describe('PUT /api/system-prompt', () => {

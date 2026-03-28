@@ -422,6 +422,22 @@ export async function getSessionContextMemory(sessionId: string): Promise<Sessio
   return res.json();
 }
 
+export async function getSessionTemplateConfig(): Promise<SessionContextConfig> {
+  const res = await fetch(`${BASE}/session-template-config`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function updateSessionTemplateConfig(config: SessionContextConfig): Promise<SessionContextConfig> {
+  const res = await fetch(`${BASE}/session-template-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
 export async function updateContextConfig(
   sessionId: string,
   config: { profileBlockIds?: string[]; toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>> },

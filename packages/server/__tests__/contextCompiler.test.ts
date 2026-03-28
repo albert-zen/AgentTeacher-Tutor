@@ -158,6 +158,14 @@ describe('selectProfileContent', () => {
     expect(content).toContain('Goals');
   });
 
+  it('treats an empty profileBlockIds array as selecting no blocks', () => {
+    writeFileSync(join(tempDir, 'profile.md'), '# Info\ndata\n# Goals\nlearn');
+    mkdirSync(join(tempDir, 'sess1'), { recursive: true });
+    writeFileSync(join(tempDir, 'sess1', 'context-config.json'), JSON.stringify({ profileBlockIds: [] }));
+    const content = selectProfileContent(tempDir, 'sess1');
+    expect(content).toBe('');
+  });
+
   it('returns empty string when no profile.md', () => {
     mkdirSync(join(tempDir, 'sess1'), { recursive: true });
     expect(selectProfileContent(tempDir, 'sess1')).toBe('');

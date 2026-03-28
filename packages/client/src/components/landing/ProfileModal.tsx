@@ -21,11 +21,15 @@ export default function ProfileModal({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    Promise.all([api.getProfile(), api.getProfileBlocks()])
-      .then(([profileRes, blocksRes]) => {
+    Promise.all([api.getProfile(), api.getProfileBlocks(), api.getSessionTemplateConfig()])
+      .then(([profileRes, blocksRes, templateConfig]) => {
         setContent(profileRes.content);
         setBlocks(blocksRes);
-        setChecked(new Set(blocksRes.map((b) => b.id)));
+        const selectedIds =
+          templateConfig.profileBlockIds !== undefined
+            ? blocksRes.filter((block) => templateConfig.profileBlockIds?.includes(block.id)).map((block) => block.id)
+            : blocksRes.map((block) => block.id);
+        setChecked(new Set(selectedIds));
       })
       .catch(() => {
         setContent('');
@@ -37,12 +41,25 @@ export default function ProfileModal({ open, onClose }: Props) {
 
   const handleSave = async () => {
     setSaving(true);
-    await api.updateProfile(content);
-    const blocksRes = await api.getProfileBlocks();
-    setBlocks(blocksRes);
-    setChecked(new Set(blocksRes.map((b) => b.id)));
-    setSaving(false);
-    onClose();
+    try {
+      const previousBlocks = blocks;
+      const previousChecked = new Set(checked);
+      const hadAllBlocksSelected =
+        previousBlocks.length > 0 && previousBlocks.every((block) => previousChecked.has(block.id));
+
+      await api.updateProfile(content);
+      const blocksRes = await api.getProfileBlocks();
+      const nextSelectedIds = hadAllBlocksSelected
+        ? blocksRes.map((block) => block.id)
+        : blocksRes.filter((block) => previousChecked.has(block.id)).map((block) => block.id);
+
+      await api.updateSessionTemplateConfig({ profileBlockIds: nextSelectedIds });
+      setBlocks(blocksRes);
+      setChecked(new Set(nextSelectedIds));
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleBlock = (id: string) => {
@@ -60,6 +77,7 @@ export default function ProfileModal({ open, onClose }: Props) {
         <div className="text-zinc-500 text-sm py-8 text-center">加载中...</div>
       ) : (
         <>
+          <p className="mb-3 text-xs text-zinc-500">这里的分块勾选会作为下一次新建 Session 的默认上下文选择。</p>
           <div className="flex gap-1 mb-3 border-b border-zinc-800">
             <TabButton active={tab === 'edit'} onClick={() => setTab('edit')}>
               编辑

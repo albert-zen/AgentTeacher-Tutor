@@ -4,7 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { Store } from '../src/db/index.js';
 import { buildSessionContextMemory, buildTemplateContextPreview } from '../src/services/contextPreview.js';
-import { saveToolConfig, saveSessionContextConfig } from '../src/services/toolConfig.js';
+import { saveToolConfig, saveSessionContextConfig, saveSessionTemplateConfig } from '../src/services/toolConfig.js';
 
 let tempDir: string;
 
@@ -39,6 +39,26 @@ describe('buildTemplateContextPreview', () => {
     ]);
     expect(result.sections[2]?.meta?.tools?.map((tool) => tool.id)).toContain('web_search');
     expect(result.sections[3]?.meta?.blocks?.map((block) => block.id)).toEqual(['背景']);
+  });
+
+  it('filters template profile blocks using the new-session draft config', () => {
+    writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端工程师\n# 目标\n理解上下文');
+    saveSessionTemplateConfig(tempDir, { profileBlockIds: ['目标'] });
+
+    const result = buildTemplateContextPreview(tempDir);
+
+    expect(result.sections.find((section) => section.kind === 'profile_blocks')?.meta?.blocks?.map((block) => block.id)).toEqual([
+      '目标',
+    ]);
+  });
+
+  it('omits template profile section when the draft config selects no profile blocks', () => {
+    writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端工程师');
+    saveSessionTemplateConfig(tempDir, { profileBlockIds: [] });
+
+    const result = buildTemplateContextPreview(tempDir);
+
+    expect(result.sections.some((section) => section.kind === 'profile_blocks')).toBe(false);
   });
 });
 

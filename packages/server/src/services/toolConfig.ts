@@ -103,6 +103,10 @@ function sessionContextConfigPath(dataDir: string, sessionId: string) {
   return join(dataDir, sessionId, 'context-config.json');
 }
 
+function sessionTemplateConfigPath(dataDir: string) {
+  return join(dataDir, 'session-template-config.json');
+}
+
 function deepMerge<T>(base: T, patch: Partial<T>): T {
   if (Array.isArray(base) || Array.isArray(patch) || typeof base !== 'object' || typeof patch !== 'object') {
     return (patch as T) ?? base;
@@ -244,10 +248,21 @@ export function loadSessionContextConfig(dataDir: string, sessionId: string): Se
   return readJson<SessionContextConfig>(sessionContextConfigPath(dataDir, sessionId)) ?? {};
 }
 
+export function loadSessionTemplateConfig(dataDir: string): SessionContextConfig {
+  return readJson<SessionContextConfig>(sessionTemplateConfigPath(dataDir)) ?? {};
+}
+
 export function saveSessionContextConfig(dataDir: string, sessionId: string, config: SessionContextConfig): SessionContextConfig {
   const current = loadSessionContextConfig(dataDir, sessionId);
   const next = deepMerge(current, config);
   writeJson(sessionContextConfigPath(dataDir, sessionId), next);
+  return next;
+}
+
+export function saveSessionTemplateConfig(dataDir: string, config: SessionContextConfig): SessionContextConfig {
+  const current = loadSessionTemplateConfig(dataDir);
+  const next = deepMerge(current, config);
+  writeJson(sessionTemplateConfigPath(dataDir), next);
   return next;
 }
 

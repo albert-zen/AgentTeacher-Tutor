@@ -199,6 +199,20 @@ describe('Session prompt draft copy on creation', () => {
     // Session 2 should still have original
     expect(readFileSync(join(tempDir, s2, 'session-prompt.md'), 'utf-8')).toBe('原始指令');
   });
+
+  it('copies landing draft profile block selection into the new session context config', async () => {
+    writeFileSync(join(tempDir, 'session-template-config.json'), JSON.stringify({ profileBlockIds: ['学习目标'] }));
+    writeFileSync(join(tempDir, 'profile.md'), '# 基本信息\nA\n# 学习目标\nB');
+
+    const res = await request(app).post('/api/session').send({ concept: 'test' });
+    const sessionId = res.body.id;
+
+    const contextConfigPath = join(tempDir, sessionId, 'context-config.json');
+    expect(existsSync(contextConfigPath)).toBe(true);
+    expect(JSON.parse(readFileSync(contextConfigPath, 'utf-8'))).toEqual({
+      profileBlockIds: ['学习目标'],
+    });
+  });
 });
 
 describe('Session context memory route', () => {

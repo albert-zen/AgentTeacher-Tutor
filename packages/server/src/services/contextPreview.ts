@@ -4,7 +4,7 @@ import type { Store } from '../db/index.js';
 import type { ChatMessage, MessagePart } from '../types.js';
 import { parseProfileBlocks, type ProfileBlock } from './profileParser.js';
 import { getSystemPrompt } from './llm.js';
-import { loadSessionContextConfig } from './toolConfig.js';
+import { loadSessionContextConfig, loadSessionTemplateConfig, type SessionContextConfig } from './toolConfig.js';
 import { resolvePromptsSeparately } from './contextCompiler.js';
 import { resolveToolContext } from './toolManager.js';
 import type { ToolId } from './toolDefinitions.js';
@@ -82,12 +82,12 @@ function loadProfileBlocks(dataDir: string): ProfileBlock[] {
   return content ? parseProfileBlocks(content) : [];
 }
 
-function selectProfileBlocks(dataDir: string, sessionId?: string): ProfileBlock[] {
+function selectProfileBlocks(dataDir: string, sessionId?: string, configOverride?: SessionContextConfig): ProfileBlock[] {
   const profileBlocks = loadProfileBlocks(dataDir);
-  if (!sessionId) return profileBlocks;
+  if (!sessionId && !configOverride) return profileBlocks;
 
-  const config = loadSessionContextConfig(dataDir, sessionId);
-  if (!config.profileBlockIds || config.profileBlockIds.length === 0) {
+  const config = configOverride ?? loadSessionContextConfig(dataDir, sessionId!);
+  if (config.profileBlockIds === undefined) {
     return profileBlocks;
   }
   return profileBlocks.filter((block) => config.profileBlockIds?.includes(block.id));
@@ -126,8 +126,9 @@ function createProfileSection(
   dataDir: string,
   sessionId: string | undefined,
   order: number,
+  configOverride?: SessionContextConfig,
 ): ContextPreviewSection | null {
-  const blocks = selectProfileBlocks(dataDir, sessionId);
+  const blocks = selectProfileBlocks(dataDir, sessionId, configOverride);
   if (blocks.length === 0) return null;
 
   const content = blocks.map((block) => `## ${block.name}\n${block.content}`.trim()).join('\n\n');
@@ -228,7 +229,8 @@ export function buildTemplateContextPreview(dataDir: string): ContextPreviewResp
   const toolSection = createToolSection(dataDir, undefined, 3);
   if (toolSection) sections.push(toolSection);
 
-  const profileSection = createProfileSection(dataDir, undefined, 4);
+  const templateConfig = loadSessionTemplateConfig(dataDir);
+  const profileSection = createProfileSection(dataDir, undefined, 4, templateConfig);
   if (profileSection) sections.push(profileSection);
 
   return {

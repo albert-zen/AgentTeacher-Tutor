@@ -7,7 +7,7 @@ import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseMilestones } from '../services/milestonesParser.js';
 import { assembleContext } from '../services/contextCompiler.js';
-import { loadSessionContextConfig, saveSessionContextConfig } from '../services/toolConfig.js';
+import { loadSessionContextConfig, loadSessionTemplateConfig, saveSessionContextConfig } from '../services/toolConfig.js';
 import { buildSessionContextMemory } from '../services/contextPreview.js';
 
 const DEFAULT_MESSAGE_PAGE_SIZE = 50;
@@ -48,6 +48,14 @@ export function createSessionRouter(store: Store, dataDir: string) {
       if (draft) {
         writeFileSync(join(dataDir, session.id, 'session-prompt.md'), draft);
       }
+    }
+
+    const templateConfig = loadSessionTemplateConfig(dataDir);
+    if (
+      (templateConfig.profileBlockIds && templateConfig.profileBlockIds.length > 0) ||
+      (templateConfig.toolOverrides && Object.keys(templateConfig.toolOverrides).length > 0)
+    ) {
+      saveSessionContextConfig(dataDir, session.id, templateConfig);
     }
 
     res.json(session);

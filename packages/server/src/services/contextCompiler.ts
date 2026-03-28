@@ -36,7 +36,7 @@ export function assembleContext(dataDir: string, sessionId: string, config?: Con
   }
 
   let selectedBlocks = profileBlocks;
-  if (config?.profileBlockIds && config.profileBlockIds.length > 0) {
+  if (config?.profileBlockIds !== undefined) {
     selectedBlocks = profileBlocks.filter((b) => config.profileBlockIds!.includes(b.id));
   }
 
@@ -105,7 +105,7 @@ export function selectProfileContent(dataDir: string, sessionId: string): string
   if (existsSync(configPath)) {
     try {
       const config: ContextConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
-      if (config.profileBlockIds && config.profileBlockIds.length > 0) {
+      if (config.profileBlockIds !== undefined) {
         blocks = blocks.filter((b) => config.profileBlockIds!.includes(b.id));
       }
     } catch {

@@ -46,6 +46,24 @@ describe('GET /api/system-prompt', () => {
   });
 });
 
+describe('Context preview routes', () => {
+  it('GET /api/context-preview/template returns ordered section modules', async () => {
+    writeFileSync(join(tempDir, 'system-prompt.md'), '自定义系统提示词');
+    writeFileSync(join(tempDir, 'session-prompt-draft.md'), '新会话默认教学指令');
+    writeFileSync(join(tempDir, 'profile.md'), '# 背景\n喜欢图解');
+
+    const res = await request(app).get('/api/context-preview/template');
+
+    expect(res.status).toBe(200);
+    expect(res.body.sections.map((section: { kind: string }) => section.kind)).toEqual([
+      'system_prompt',
+      'session_prompt_draft',
+      'tool_instructions',
+      'profile_blocks',
+    ]);
+  });
+});
+
 describe('PUT /api/system-prompt', () => {
   it('creates system-prompt.md and returns success', async () => {
     const res = await request(app).put('/api/system-prompt').send({ content: 'New prompt content' });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import express from 'express';
@@ -198,5 +198,55 @@ describe('Session prompt draft copy on creation', () => {
 
     // Session 2 should still have original
     expect(readFileSync(join(tempDir, s2, 'session-prompt.md'), 'utf-8')).toBe('原始指令');
+  });
+});
+
+describe('Session context memory route', () => {
+  it('GET /api/session/:id/context-memory returns ordered modules with history parts', async () => {
+    const createRes = await request(app).post('/api/session').send({ concept: 'OpenClaw' });
+    const sessionId = createRes.body.id;
+    mkdirSync(join(tempDir, sessionId), { recursive: true });
+
+    writeFileSync(join(tempDir, 'system-prompt.md'), '系统提示词');
+    writeFileSync(join(tempDir, sessionId, 'session-prompt.md'), 'Session 指令');
+    writeFileSync(join(tempDir, 'profile.md'), '# 背景\n前端\n# 目标\n查资料');
+    writeFileSync(join(tempDir, sessionId, 'context-config.json'), JSON.stringify({ profileBlockIds: ['目标'] }));
+
+    store.addMessage({
+      id: 'u1',
+      sessionId,
+      role: 'user',
+      content: '最近很火的 openclaw 是什么',
+      createdAt: '2026-03-28T10:00:00.000Z',
+    });
+    store.addMessage({
+      id: 'a1',
+      sessionId,
+      role: 'assistant',
+      content: '我先帮你搜一下。',
+      parts: [
+        { type: 'text', content: '我先帮你搜一下。' },
+        { type: 'tool-call', toolName: 'web_search', args: { query: 'OpenClaw 是什么' } },
+        { type: 'tool-result', toolName: 'web_search', result: { success: true } },
+      ],
+      createdAt: '2026-03-28T10:00:05.000Z',
+    });
+
+    const res = await request(app).get(`/api/session/${sessionId}/context-memory`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.sections.map((section: { kind: string }) => section.kind)).toEqual([
+      'system_prompt',
+      'session_prompt',
+      'tool_instructions',
+      'profile_blocks',
+      'history_turn',
+      'history_turn',
+    ]);
+    expect(res.body.sections[5].meta.parts.map((part: { kind: string }) => part.kind)).toEqual([
+      'text',
+      'tool-call',
+      'tool-result',
+    ]);
   });
 });

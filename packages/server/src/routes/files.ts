@@ -13,6 +13,7 @@ import {
 import { resolveToolContext, runToolRuntimeAction, updateGlobalToolState, updateSessionToolState } from '../services/toolManager.js';
 import { loadToolConfig } from '../services/toolConfig.js';
 import type { ToolId } from '../services/toolDefinitions.js';
+import { buildTemplateContextPreview } from '../services/contextPreview.js';
 
 export function createFilesRouter(store: Store, dataDir: string) {
   const router = Router();
@@ -173,6 +174,10 @@ export function createFilesRouter(store: Store, dataDir: string) {
       tools: context.visibleTools,
       globalConfig: context.globalConfig,
     });
+  });
+
+  router.get('/context-preview/template', (_req, res) => {
+    res.json(buildTemplateContextPreview(dataDir));
   });
 
   router.put('/tools/:id', async (req, res) => {

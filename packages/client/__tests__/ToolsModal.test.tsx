@@ -118,6 +118,7 @@ describe('Tools modals', () => {
 
     expect(await screen.findByText('联网搜索')).toBeTruthy();
     expect(screen.getByText('Sidecar unavailable: ECONNREFUSED')).toBeTruthy();
+    expect(screen.getByDisplayValue('managed').tagName).toBe('SELECT');
 
     fireEvent.click(screen.getByRole('button', { name: '检查' }));
     expect(mockRunToolRuntimeAction).toHaveBeenCalledWith('web_search', 'check');

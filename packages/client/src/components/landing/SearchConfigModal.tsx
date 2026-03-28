@@ -131,9 +131,13 @@ export default function SearchConfigModal({ open, onClose }: Props) {
               {tool.id === 'web_search' && searchDraft && (
                 <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
                   <div className="grid grid-cols-2 gap-2">
-                    <FormField
+                    <SelectField
                       label="Runtime Mode"
                       value={searchDraft.runtimeMode}
+                      options={[
+                        { value: 'managed', label: 'managed' },
+                        { value: 'external', label: 'external' },
+                      ]}
                       onChange={(value) =>
                         setSearchDraft((prev) => (prev ? { ...prev, runtimeMode: value as WebSearchToolConfig['runtimeMode'] } : prev))
                       }
@@ -269,6 +273,35 @@ function FormField({
         onChange={(event) => onChange(event.target.value)}
         className="w-full px-3 py-2 text-sm font-mono rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
       />
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-zinc-500 mb-1.5">{label}</label>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full px-3 py-2 text-sm font-mono rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 focus:outline-none focus:border-zinc-500 transition-colors"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

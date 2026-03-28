@@ -17,6 +17,15 @@ interface ManagedRuntime {
   snapshot: ToolRuntimeSnapshot;
 }
 
+interface ManagedHealthPayload {
+  ok?: boolean;
+  listening?: boolean;
+  upstreamReachable?: boolean;
+  remoteBaseURL?: string;
+  status?: number;
+  error?: string;
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -104,12 +113,19 @@ export class ToolRuntimeManager {
       try {
         const backendResponse = await ping(`http://127.0.0.1:${webConfig.backend.port}/health`, 1500);
         const sidecarResponse = await ping(`http://127.0.0.1:${webConfig.sidecar.port}/health`, 1500);
+        const backendPayload = (await backendResponse.json().catch(() => null)) as ManagedHealthPayload | null;
+        const backendReady = backendResponse.ok && backendPayload?.ok !== false;
+        const sidecarReady = sidecarResponse.ok;
+        const upstreamReachable = backendPayload?.upstreamReachable !== false;
+        const remoteBaseURL = backendPayload?.remoteBaseURL ?? webConfig.upstream.remoteBaseURL;
         const snapshot = {
-          status: backendResponse.ok && sidecarResponse.ok ? ('ready' as const) : ('error' as const),
+          status: backendReady && sidecarReady && upstreamReachable ? ('ready' as const) : ('error' as const),
           message:
-            backendResponse.ok && sidecarResponse.ok
-              ? `Backend ${webConfig.backend.port} and sidecar ${webConfig.sidecar.port} are ready.`
-              : `Managed search stack is unhealthy (backend ${backendResponse.status}, sidecar ${sidecarResponse.status}).`,
+            !backendReady || !sidecarReady
+              ? `Managed search stack is unhealthy (backend ${backendResponse.status}, sidecar ${sidecarResponse.status}).`
+              : upstreamReachable
+                ? `Backend ${webConfig.backend.port} and sidecar ${webConfig.sidecar.port} are ready.`
+                : `Managed search stack is running, but upstream search source ${remoteBaseURL} is unreachable${backendPayload?.error ? `: ${backendPayload.error}` : ''}.`,
           updatedAt: now(),
         };
         this.setSnapshot(toolId, snapshot);
@@ -223,7 +239,7 @@ export class ToolRuntimeManager {
 
     try {
       await Promise.race([
-        this.waitUntilReady(webConfig.backend.port, 4000),
+        this.waitUntilReady(webConfig.backend.port, 4000, 'backend'),
         once(backend, 'error').then(([error]) => {
           throw error;
         }),
@@ -258,19 +274,13 @@ export class ToolRuntimeManager {
       });
 
       await Promise.race([
-        this.waitUntilReady(webConfig.sidecar.port, 4000),
+        this.waitUntilReady(webConfig.sidecar.port, 4000, 'sidecar'),
         once(sidecar, 'error').then(([error]) => {
           throw error;
         }),
       ]);
 
-      const snapshot = {
-        status: 'ready' as const,
-        message: `Managed search backend ${webConfig.backend.port} and sidecar ${webConfig.sidecar.port} are ready.`,
-        updatedAt: now(),
-      };
-      this.setSnapshot(toolId, snapshot);
-      return snapshot;
+      return this.check(toolId, config);
     } catch (error: unknown) {
       backend.kill();
       sidecar?.kill();
@@ -324,7 +334,7 @@ export class ToolRuntimeManager {
     return this.start(toolId, config);
   }
 
-  private async waitUntilReady(port: number, timeoutMs: number) {
+  private async waitUntilReady(port: number, timeoutMs: number, component: 'backend' | 'sidecar') {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       try {
@@ -335,7 +345,7 @@ export class ToolRuntimeManager {
       }
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
-    throw new Error(`Timed out waiting for sidecar on port ${port}.`);
+    throw new Error(`Timed out waiting for ${component} on port ${port}.`);
   }
 }
 

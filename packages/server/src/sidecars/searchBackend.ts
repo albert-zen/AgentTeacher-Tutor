@@ -79,20 +79,29 @@ app.use(express.json());
 app.get('/health', async (_req, res) => {
   const baseURL = process.env.SEARCH_REMOTE_BASE_URL;
   if (!baseURL) {
-    res.status(500).json({ ok: false, error: 'SEARCH_REMOTE_BASE_URL is not configured.' });
+    res.status(200).json({
+      ok: true,
+      listening: true,
+      upstreamReachable: false,
+      error: 'SEARCH_REMOTE_BASE_URL is not configured.',
+    });
     return;
   }
 
   try {
     const response = await fetch(baseURL, { signal: AbortSignal.timeout(1500) });
-    res.status(response.ok ? 200 : 502).json({
-      ok: response.ok,
+    res.status(200).json({
+      ok: true,
+      listening: true,
+      upstreamReachable: response.ok,
       remoteBaseURL: baseURL,
       status: response.status,
     });
   } catch (error: unknown) {
-    res.status(502).json({
-      ok: false,
+    res.status(200).json({
+      ok: true,
+      listening: true,
+      upstreamReachable: false,
       remoteBaseURL: baseURL,
       error: error instanceof Error ? error.message : String(error),
     });

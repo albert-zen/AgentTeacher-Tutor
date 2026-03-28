@@ -28,7 +28,7 @@ export default function Modal({ open, onClose, title, children }: Props) {
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6" onClick={onClose}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
@@ -37,10 +37,10 @@ export default function Modal({ open, onClose, title, children }: Props) {
         ref={dialogRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-lg mx-4 bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl shadow-black/40 outline-none animate-in"
+        className="relative flex max-h-[min(88vh,960px)] w-full max-w-lg flex-col overflow-hidden bg-zinc-900 border border-zinc-700/80 rounded-xl shadow-2xl shadow-black/40 outline-none animate-in"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-200 tracking-wide">{title}</h2>
           <button
             onClick={onClose}
@@ -51,7 +51,7 @@ export default function Modal({ open, onClose, title, children }: Props) {
         </div>
 
         {/* Content */}
-        <div className="p-5">{children}</div>
+        <div className="min-h-0 overflow-y-auto p-5">{children}</div>
       </div>
     </div>,
     document.body,

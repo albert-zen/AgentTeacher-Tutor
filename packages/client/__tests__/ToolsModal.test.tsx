@@ -156,6 +156,53 @@ describe('Tools modals', () => {
     });
   });
 
+  it('refreshes tool state after toggling local web_search in the landing draft', async () => {
+    const onSaveDraft = vi.fn().mockResolvedValue(undefined);
+    const disabledResponse = {
+      ...makeToolsResponse(),
+      manifest: {
+        version: 1 as const,
+        profileSelection: { mode: 'inherit_all' as const },
+        enabledTools: ['read_file', 'write_file', 'fetch_url'],
+      },
+      tools: makeToolsResponse().tools.map((tool) => (tool.id === 'web_search' ? { ...tool, enabled: false } : tool)),
+    };
+    mockGetTools.mockReset();
+    mockGetTools.mockResolvedValueOnce(disabledResponse).mockResolvedValueOnce(makeToolsResponse());
+
+    render(
+      <ToolsModal
+        open
+        onClose={() => {}}
+        draft={{
+          manifest: {
+            version: 1,
+            profileSelection: { mode: 'inherit_all' },
+            enabledTools: ['read_file', 'write_file', 'fetch_url'],
+          },
+          sessionPrompt: '',
+        }}
+        onSaveDraft={onSaveDraft}
+      />,
+    );
+
+    expect(await screen.findByText('联网搜索')).toBeTruthy();
+    const toggles = screen.getAllByRole('checkbox');
+    fireEvent.click(toggles[2]);
+
+    await waitFor(() => {
+      expect(onSaveDraft).toHaveBeenCalledWith({
+        manifest: {
+          version: 1,
+          profileSelection: { mode: 'inherit_all' },
+          enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+        },
+        sessionPrompt: '',
+      });
+      expect(mockGetTools).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('renders the session tools modal and saves a session override', async () => {
     render(<SessionToolsModal sessionId="session-1" open onClose={() => {}} />);
 

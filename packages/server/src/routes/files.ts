@@ -14,9 +14,27 @@ import { resolveToolContext, runToolRuntimeAction, setDraftToolEnabled, setSessi
 import type { ToolId } from '../services/toolDefinitions.js';
 import { buildTemplateContextPreview } from '../services/contextPreview.js';
 import { loadSessionContext, loadSessionDraft, saveSessionDraft, type SessionDraft } from '../services/sessionDraftService.js';
+import { loadToolConfig } from '../services/toolConfig.js';
+import { getToolRuntimeManager } from '../services/toolRuntimeManager.js';
 
 export function createFilesRouter(store: Store, dataDir: string) {
   const router = Router();
+
+  async function ensureAutoManagedRuntimes() {
+    const toolConfig = loadToolConfig(dataDir);
+    const webSearchConfig = toolConfig.tools.web_search;
+    if (webSearchConfig.runtimeMode !== 'local') {
+      return;
+    }
+
+    const draftEnabled = loadSessionDraft(dataDir).manifest.enabledTools.includes('web_search');
+    const sessionEnabled = store.getSessions().some((session) => loadSessionContext(dataDir, session.id).enabledTools.includes('web_search'));
+    if (!draftEnabled && !sessionEnabled) {
+      return;
+    }
+
+    await getToolRuntimeManager(dataDir).ensureReady('web_search', webSearchConfig);
+  }
 
   function getFileService(sessionId: string): FileService | null {
     const session = store.getSession(sessionId);
@@ -158,7 +176,8 @@ export function createFilesRouter(store: Store, dataDir: string) {
     res.json({ success: true });
   });
 
-  router.get('/tools', (_req, res) => {
+  router.get('/tools', async (_req, res) => {
+    await ensureAutoManagedRuntimes();
     const context = resolveToolContext(dataDir);
     res.json({
       tools: context.visibleTools,
@@ -178,11 +197,13 @@ export function createFilesRouter(store: Store, dataDir: string) {
       if (typeof enabled === 'boolean') {
         setDraftToolEnabled(dataDir, toolId, enabled);
       }
-      const next = await updateGlobalToolState(dataDir, toolId, patch);
+      await updateGlobalToolState(dataDir, toolId, patch);
+      await ensureAutoManagedRuntimes();
+      const refreshed = resolveToolContext(dataDir);
       res.json({
-        tools: next.visibleTools,
-        globalConfig: next.globalConfig,
-        manifest: next.source.kind === 'draft' ? next.source.draft.manifest : null,
+        tools: refreshed.visibleTools,
+        globalConfig: refreshed.globalConfig,
+        manifest: refreshed.source.kind === 'draft' ? refreshed.source.draft.manifest : null,
       });
     } catch (error: unknown) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
@@ -200,13 +221,14 @@ export function createFilesRouter(store: Store, dataDir: string) {
     }
   });
 
-  router.get('/session/:id/tools', (req, res) => {
+  router.get('/session/:id/tools', async (req, res) => {
     const session = store.getSession(req.params.id);
     if (!session) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
 
+    await ensureAutoManagedRuntimes();
     const context = resolveToolContext(dataDir, session.id);
     res.json({
       tools: context.visibleTools,
@@ -230,7 +252,9 @@ export function createFilesRouter(store: Store, dataDir: string) {
 
     try {
       const desiredEnabled = enabled === undefined ? true : Boolean(enabled);
-      const next = setSessionToolEnabled(dataDir, session.id, toolId, desiredEnabled);
+      setSessionToolEnabled(dataDir, session.id, toolId, desiredEnabled);
+      await ensureAutoManagedRuntimes();
+      const next = resolveToolContext(dataDir, session.id);
       res.json({
         tools: next.visibleTools,
         sessionConfig: loadSessionContext(dataDir, session.id),

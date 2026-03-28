@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -7,6 +7,33 @@ import request from 'supertest';
 import { Store } from '../src/db/index.js';
 import { createFilesRouter } from '../src/routes/files.js';
 import { createSessionRouter } from '../src/routes/session.js';
+
+const mockEnsureReady = vi.fn(async () => ({
+  status: 'ready' as const,
+  message: 'Local search stack is ready.',
+  updatedAt: new Date().toISOString(),
+}));
+
+vi.mock('../src/services/toolRuntimeManager.js', () => ({
+  getToolRuntimeManager: () => ({
+    getSnapshot: (_toolId: string, enabled: boolean) => ({
+      status: enabled ? ('stopped' as const) : ('disabled' as const),
+      updatedAt: new Date().toISOString(),
+    }),
+    ensureReady: (...args: unknown[]) => mockEnsureReady(...args),
+    start: (...args: unknown[]) => mockEnsureReady(...args),
+    stop: vi.fn(async () => ({
+      status: 'stopped' as const,
+      message: 'Runtime stopped.',
+      updatedAt: new Date().toISOString(),
+    })),
+    restart: (...args: unknown[]) => mockEnsureReady(...args),
+    check: vi.fn(async () => ({
+      status: 'stopped' as const,
+      updatedAt: new Date().toISOString(),
+    })),
+  }),
+}));
 
 let tempDir: string;
 let app: express.Express;
@@ -19,6 +46,7 @@ beforeEach(() => {
   app.use(express.json());
   app.use('/api/session', createSessionRouter(store, tempDir));
   app.use('/api', createFilesRouter(store, tempDir));
+  mockEnsureReady.mockClear();
 });
 
 afterEach(() => {
@@ -94,6 +122,26 @@ describe('Tool manager routes', () => {
     expect(res.body.globalConfig.tools.web_search.runtimeMode).toBeDefined();
   });
 
+  it('GET /api/tools auto-starts local search runtime when web_search is enabled in the draft', async () => {
+    await request(app).put('/api/session-draft').send({
+      manifest: {
+        version: 1,
+        profileSelection: { mode: 'inherit_all' },
+        enabledTools: ['read_file', 'write_file', 'fetch_url', 'web_search'],
+      },
+      sessionPrompt: '',
+    });
+
+    const res = await request(app).get('/api/tools');
+    expect(res.status).toBe(200);
+    expect(mockEnsureReady).toHaveBeenCalledWith(
+      'web_search',
+      expect.objectContaining({
+        runtimeMode: 'local',
+      }),
+    );
+  });
+
   it('PUT /api/tools/:id persists global tool config', async () => {
     const put = await request(app).put('/api/tools/web_search').send({
       runtimeMode: 'external',
@@ -151,6 +199,7 @@ describe('Tool manager routes', () => {
     expect(enableAgain.status).toBe(200);
     expect(enableAgain.body.sessionConfig.enabledTools).toContain('web_search');
     expect(enableAgain.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(true);
+    expect(mockEnsureReady).toHaveBeenCalled();
   });
 });
 

@@ -124,7 +124,7 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
         open={modal === 'context-preview'}
         onClose={handleCloseModal}
         title="上下文预览"
-        description="这里展示新建 Session 时，Teacher 默认会收到的上下文模板顺序。"
+        description="新会话默认会把哪些上下文送进模型，都按顺序列在这里。"
         fetchPreview={api.getTemplateContextPreview}
       />
     </div>

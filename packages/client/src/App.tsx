@@ -305,7 +305,7 @@ export default function App() {
           open={viewingContextMemory}
           onClose={() => setViewingContextMemory(false)}
           title="模型记忆"
-          description="这里展示当前 Session 实际会传给模型的上下文模块，以及已持久化的对话 history。"
+          description="当前这次对话真正带进模型的内容，都按实际顺序摊开在这里。"
           fetchPreview={() => api.getSessionContextMemory(session.id)}
         />
       )}

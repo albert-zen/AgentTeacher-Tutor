@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
-import { join } from 'path';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { Session } from '../types.js';
 import type { Store } from '../db/index.js';
 import { FileService } from '../services/fileService.js';
 import { parseMilestones } from '../services/milestonesParser.js';
 import { assembleContext } from '../services/contextCompiler.js';
-import { loadSessionContextConfig, loadSessionTemplateConfig, saveSessionContextConfig } from '../services/toolConfig.js';
 import { buildSessionContextMemory } from '../services/contextPreview.js';
+import { loadSessionContext, loadSessionDraft, materializeDraftToSession, saveSessionContext } from '../services/sessionDraftService.js';
+import { join } from 'path';
+import { existsSync } from 'fs';
 
 const DEFAULT_MESSAGE_PAGE_SIZE = 50;
 const MAX_MESSAGE_PAGE_SIZE = 100;
@@ -41,22 +41,7 @@ export function createSessionRouter(store: Store, dataDir: string) {
       createdAt: new Date().toISOString(),
     };
     store.createSession(session);
-
-    const draftPath = join(dataDir, 'session-prompt-draft.md');
-    if (existsSync(draftPath)) {
-      const draft = readFileSync(draftPath, 'utf-8').trim();
-      if (draft) {
-        writeFileSync(join(dataDir, session.id, 'session-prompt.md'), draft);
-      }
-    }
-
-    const templateConfig = loadSessionTemplateConfig(dataDir);
-    if (
-      (templateConfig.profileBlockIds && templateConfig.profileBlockIds.length > 0) ||
-      (templateConfig.toolOverrides && Object.keys(templateConfig.toolOverrides).length > 0)
-    ) {
-      saveSessionContextConfig(dataDir, session.id, templateConfig);
-    }
+    materializeDraftToSession(dataDir, session.id, loadSessionDraft(dataDir));
 
     res.json(session);
   });
@@ -116,7 +101,13 @@ export function createSessionRouter(store: Store, dataDir: string) {
       return;
     }
 
-    const context = assembleContext(dataDir, session.id, loadSessionContextConfig(dataDir, session.id));
+    const contextManifest = loadSessionContext(dataDir, session.id);
+    const context = assembleContext(dataDir, session.id, {
+      profileBlockIds:
+        contextManifest.profileSelection.mode === 'explicit'
+          ? contextManifest.profileSelection.blockIds
+          : undefined,
+    });
     res.json(context);
   });
 
@@ -138,7 +129,18 @@ export function createSessionRouter(store: Store, dataDir: string) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-    saveSessionContextConfig(dataDir, session.id, req.body);
+    const current = loadSessionContext(dataDir, session.id);
+    const nextProfileSelection =
+      req.body.profileBlockIds === undefined
+        ? current.profileSelection
+        : {
+            mode: 'explicit' as const,
+            blockIds: Array.isArray(req.body.profileBlockIds) ? req.body.profileBlockIds : [],
+          };
+    saveSessionContext(dataDir, session.id, {
+      ...current,
+      profileSelection: nextProfileSelection,
+    });
     res.json({ success: true });
   });
 

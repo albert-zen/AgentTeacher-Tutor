@@ -1,168 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+export {
+  type ToolId,
+  type ToolRuntimeMode,
+  type ToolRuntimeStatus,
+  getToolRegistry as loadToolDefinitions,
+} from './toolRegistry.js';
 
-export type ToolId = 'read_file' | 'write_file' | 'fetch_url' | 'web_search' | 'browser';
-export type ToolRuntimeMode = 'builtin' | 'local' | 'managed' | 'external';
-export type ToolRuntimeStatus = 'disabled' | 'stopped' | 'starting' | 'ready' | 'error';
+import { getToolRegistry } from './toolRegistry.js';
+import type { ToolId } from './toolRegistry.js';
 
-export interface ToolDefinition {
-  id: ToolId;
-  label: string;
-  description: string;
-  exposeToModel: boolean;
-  uiVisible: boolean;
-  hasRuntime: boolean;
-  supportedRuntimeModes: ToolRuntimeMode[];
+export type ToolDefinition = ReturnType<typeof getToolRegistry>[ToolId];
+
+export function ensureToolDefinitionFiles() {
+  // No-op: tool definitions are now fully owned by the server-side registry.
 }
 
-interface ToolDefinitionFile {
-  id: ToolId;
-  label: string;
-  description: string;
-  exposeToModel: boolean;
-  uiVisible: boolean;
-  hasRuntime: boolean;
-  supportedRuntimeModes: ToolRuntimeMode[];
-}
-
-const defaultDefinitionFiles: Record<ToolId, ToolDefinitionFile> = {
-  read_file: {
-    id: 'read_file',
-    label: '读文件',
-    description: '读取当前 Session 工作区中的文件或行范围。',
-    exposeToModel: true,
-    uiVisible: true,
-    hasRuntime: false,
-    supportedRuntimeModes: ['builtin'],
-  },
-  write_file: {
-    id: 'write_file',
-    label: '写文件',
-    description: '创建或修改当前 Session 工作区中的文件内容。',
-    exposeToModel: true,
-    uiVisible: true,
-    hasRuntime: false,
-    supportedRuntimeModes: ['builtin'],
-  },
-  fetch_url: {
-    id: 'fetch_url',
-    label: '抓取网页',
-    description: '抓取指定 URL 的正文内容，供 Teacher 阅读和引用。',
-    exposeToModel: true,
-    uiVisible: true,
-    hasRuntime: false,
-    supportedRuntimeModes: ['builtin'],
-  },
-  web_search: {
-    id: 'web_search',
-    label: '联网搜索',
-    description: '为 Teacher 提供外部资料与最新信息检索能力。',
-    exposeToModel: true,
-    uiVisible: true,
-    hasRuntime: true,
-    supportedRuntimeModes: ['local', 'external'],
-  },
-  browser: {
-    id: 'browser',
-    label: '浏览器',
-    description: '预留给未来网页浏览与抓取能力的工具定义。',
-    exposeToModel: false,
-    uiVisible: false,
-    hasRuntime: true,
-    supportedRuntimeModes: ['managed', 'external'],
-  },
-};
-
-const defaultPromptFragments: Record<ToolId, string> = {
-  read_file: [
-    '## read_file',
-    '- Use read_file to inspect files or line ranges inside the current session workspace.',
-    '- Prefer read_file when the student references a file or when you need to verify current file contents before answering.',
-  ].join('\n'),
-  write_file: [
-    '## write_file',
-    '- Use write_file to create or update learning materials inside the current session workspace.',
-    '- Only modify files that help the student, and keep edits aligned with the current session context.',
-  ].join('\n'),
-  fetch_url: [
-    '## fetch_url',
-    '- Use fetch_url to read the content of a specific webpage after you already have a relevant URL.',
-    '- Prefer fetching one or two promising pages instead of pulling many URLs at once.',
-    '- Summarize and cite fetched pages carefully; if a page is useful for later, persist notes with write_file instead of repeatedly fetching it.',
-  ].join('\n'),
-  web_search: [
-    '## web_search',
-    '- Use web_search only for up-to-date information, external references, or official documentation.',
-    '- Prefer a small number of high-quality search results and mention sources when they inform your answer.',
-    '- If search results will be useful later in the session, you may persist them into references/ using write_file.',
-  ].join('\n'),
-  browser: [
-    '## browser',
-    '- This tool is reserved for future browser automation support and is not currently exposed.',
-  ].join('\n'),
-};
-
-function toolDir(dataDir: string) {
-  return join(dataDir, 'tools');
-}
-
-function toolDefinitionPath(dataDir: string, toolId: ToolId) {
-  return join(toolDir(dataDir), `${toolId}.json`);
-}
-
-function toolPromptPath(dataDir: string, toolId: ToolId) {
-  return join(toolDir(dataDir), `${toolId}.md`);
-}
-
-export function ensureToolDefinitionFiles(dataDir: string) {
-  mkdirSync(toolDir(dataDir), { recursive: true });
-
-  for (const toolId of Object.keys(defaultDefinitionFiles) as ToolId[]) {
-    const definitionPath = toolDefinitionPath(dataDir, toolId);
-    if (!existsSync(definitionPath)) {
-      writeFileSync(definitionPath, JSON.stringify(defaultDefinitionFiles[toolId], null, 2));
-    }
-
-    const promptPath = toolPromptPath(dataDir, toolId);
-    if (!existsSync(promptPath)) {
-      writeFileSync(promptPath, `${defaultPromptFragments[toolId]}\n`);
-    }
-  }
-}
-
-export function loadToolDefinitions(dataDir: string): Record<ToolId, ToolDefinition> {
-  ensureToolDefinitionFiles(dataDir);
-
-  const definitions = {} as Record<ToolId, ToolDefinition>;
-  for (const toolId of Object.keys(defaultDefinitionFiles) as ToolId[]) {
-    const fallback = defaultDefinitionFiles[toolId];
-    let parsed: Partial<ToolDefinitionFile> = {};
-    try {
-      parsed = JSON.parse(readFileSync(toolDefinitionPath(dataDir, toolId), 'utf-8')) as Partial<ToolDefinitionFile>;
-    } catch {
-      parsed = {};
-    }
-    definitions[toolId] = {
-      id: toolId,
-      label: parsed.label || fallback.label,
-      description: parsed.description || fallback.description,
-      exposeToModel: parsed.exposeToModel ?? fallback.exposeToModel,
-      uiVisible: parsed.uiVisible ?? fallback.uiVisible,
-      hasRuntime: parsed.hasRuntime ?? fallback.hasRuntime,
-      supportedRuntimeModes:
-        (parsed.supportedRuntimeModes ?? fallback.supportedRuntimeModes).map((mode) =>
-          toolId === 'web_search' && mode === 'managed' ? 'local' : mode,
-        ) as ToolRuntimeMode[],
-    };
-  }
-  return definitions;
-}
-
-export function loadToolPromptFragment(dataDir: string, toolId: ToolId): string {
-  ensureToolDefinitionFiles(dataDir);
-  try {
-    return readFileSync(toolPromptPath(dataDir, toolId), 'utf-8').trim();
-  } catch {
-    return defaultPromptFragments[toolId];
-  }
+export function loadToolPromptFragment(_dataDir: string, toolId: ToolId): string {
+  return getToolRegistry()[toolId].buildPromptFragment();
 }

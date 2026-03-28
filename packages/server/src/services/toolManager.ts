@@ -1,13 +1,14 @@
-import { loadToolConfig, loadSessionContextConfig, resolveToolEnabled, updateToolConfig, updateSessionToolOverride } from './toolConfig.js';
-import {
-  loadToolDefinitions,
-  loadToolPromptFragment,
-  type ToolId,
-  type ToolRuntimeStatus,
-  type ToolDefinition,
-} from './toolDefinitions.js';
+import { loadToolConfig, updateToolConfig, type ToolConfigFile } from './toolConfig.js';
+import { getToolRegistry, type ToolId, type ToolRegistryEntry, type ToolRuntimeStatus } from './toolRegistry.js';
 import { getToolRuntimeManager } from './toolRuntimeManager.js';
-import type { ToolConfigFile, SessionContextConfig, ToolOverride } from './toolConfig.js';
+import {
+  loadSessionContext,
+  loadSessionDraft,
+  saveSessionContext,
+  saveSessionDraft,
+  type SessionContextManifest,
+  type SessionDraft,
+} from './sessionDraftService.js';
 
 export interface ToolState {
   id: ToolId;
@@ -20,7 +21,6 @@ export interface ToolState {
   status: ToolRuntimeStatus;
   message?: string;
   config: ToolConfigFile['tools'][ToolId];
-  sessionOverride?: ToolOverride | null;
 }
 
 export interface ToolContext {
@@ -28,16 +28,21 @@ export interface ToolContext {
   visibleTools: ToolState[];
   promptFragments: Array<{ id: ToolId; label: string; content: string }>;
   globalConfig: ToolConfigFile;
-  sessionConfig: SessionContextConfig;
+  source:
+    | { kind: 'draft'; draft: SessionDraft }
+    | { kind: 'session'; sessionContext: SessionContextManifest };
 }
 
-function formatToolState(
-  definition: ToolDefinition,
+function enabledToolsSet(toolIds: ToolId[]) {
+  return new Set(toolIds);
+}
+
+function toToolState(
+  definition: ToolRegistryEntry,
   config: ToolConfigFile['tools'][ToolId],
   enabled: boolean,
   status: ToolRuntimeStatus,
-  message: string | undefined,
-  sessionOverride?: ToolOverride | null,
+  message?: string,
 ): ToolState {
   return {
     id: definition.id,
@@ -50,40 +55,34 @@ function formatToolState(
     status,
     message,
     config,
-    sessionOverride,
   };
 }
 
 export function resolveToolContext(dataDir: string, sessionId?: string): ToolContext {
-  const definitions = loadToolDefinitions(dataDir);
+  const registry = getToolRegistry();
   const globalConfig = loadToolConfig(dataDir);
-  const sessionConfig = sessionId ? loadSessionContextConfig(dataDir, sessionId) : {};
-  const runtimeManager = getToolRuntimeManager(process.cwd());
+  const runtimeManager = getToolRuntimeManager(dataDir);
+  const source = sessionId
+    ? { kind: 'session' as const, sessionContext: loadSessionContext(dataDir, sessionId) }
+    : { kind: 'draft' as const, draft: loadSessionDraft(dataDir) };
+  const enabledSet = enabledToolsSet(
+    source.kind === 'session' ? source.sessionContext.enabledTools : source.draft.manifest.enabledTools,
+  );
 
-  const allStates: ToolState[] = [];
-  for (const toolId of Object.keys(definitions) as ToolId[]) {
-    const definition = definitions[toolId];
+  const states = (Object.keys(registry) as ToolId[]).map((toolId) => {
+    const definition = registry[toolId];
     const config = globalConfig.tools[toolId];
-    const enabled = resolveToolEnabled(globalConfig, sessionConfig, toolId);
+    const enabled = enabledSet.has(toolId);
     const snapshot = runtimeManager.getSnapshot(toolId, enabled, config);
-    allStates.push(
-      formatToolState(
-        definition,
-        config,
-        enabled,
-        snapshot.status,
-        snapshot.message,
-        sessionConfig.toolOverrides?.[toolId] ?? null,
-      ),
-    );
-  }
+    return toToolState(definition, config, enabled, snapshot.status, snapshot.message);
+  });
 
-  const enabledTools = allStates.filter((tool) => tool.enabled && tool.exposeToModel);
-  const visibleTools = allStates.filter((tool) => tool.uiVisible);
+  const visibleTools = states.filter((tool) => tool.uiVisible);
+  const enabledTools = states.filter((tool) => tool.enabled && tool.exposeToModel);
   const promptFragments = enabledTools.map((tool) => ({
     id: tool.id,
     label: tool.label,
-    content: loadToolPromptFragment(dataDir, tool.id),
+    content: registry[tool.id].buildPromptFragment(),
   }));
 
   return {
@@ -91,22 +90,7 @@ export function resolveToolContext(dataDir: string, sessionId?: string): ToolCon
     visibleTools,
     promptFragments,
     globalConfig,
-    sessionConfig,
-  };
-}
-
-export async function refreshRuntimeState(dataDir: string, sessionId: string | undefined, toolId: ToolId) {
-  const context = resolveToolContext(dataDir, sessionId);
-  const tool = context.visibleTools.find((item) => item.id === toolId) ?? context.enabledTools.find((item) => item.id === toolId);
-  if (!tool) {
-    throw new Error(`Unknown tool: ${toolId}`);
-  }
-  const runtimeManager = getToolRuntimeManager(process.cwd());
-  const snapshot = await runtimeManager.check(toolId, tool.config);
-  return {
-    ...tool,
-    status: snapshot.status,
-    message: snapshot.message,
+    source,
   };
 }
 
@@ -117,18 +101,19 @@ export async function runToolRuntimeAction(
 ) {
   const context = resolveToolContext(dataDir);
   const tool = context.visibleTools.find((item) => item.id === toolId);
-  if (!tool) throw new Error(`Unknown tool: ${toolId}`);
+  if (!tool) {
+    throw new Error(`Unknown tool: ${toolId}`);
+  }
 
-  const runtimeManager = getToolRuntimeManager(process.cwd());
-  const config = tool.config;
+  const runtimeManager = getToolRuntimeManager(dataDir);
   const snapshot =
     action === 'start'
-      ? await runtimeManager.start(toolId, config)
+      ? await runtimeManager.start(toolId, tool.config)
       : action === 'stop'
-        ? await runtimeManager.stop(toolId, config)
+        ? await runtimeManager.stop(toolId, tool.config)
         : action === 'restart'
-          ? await runtimeManager.restart(toolId, config)
-          : await runtimeManager.check(toolId, config);
+          ? await runtimeManager.restart(toolId, tool.config)
+          : await runtimeManager.check(toolId, tool.config);
 
   return {
     ...tool,
@@ -146,12 +131,31 @@ export async function updateGlobalToolState(
   return resolveToolContext(dataDir);
 }
 
-export async function updateSessionToolState(
-  dataDir: string,
-  sessionId: string,
-  toolId: ToolId,
-  override: ToolOverride | null,
-) {
-  updateSessionToolOverride(dataDir, sessionId, toolId, override);
+export function setDraftToolEnabled(dataDir: string, toolId: ToolId, enabled: boolean) {
+  const draft = loadSessionDraft(dataDir);
+  const enabledTools = new Set(draft.manifest.enabledTools);
+  if (enabled) enabledTools.add(toolId);
+  else enabledTools.delete(toolId);
+
+  saveSessionDraft(dataDir, {
+    ...draft,
+    manifest: {
+      ...draft.manifest,
+      enabledTools: Array.from(enabledTools),
+    },
+  });
+
+  return resolveToolContext(dataDir);
+}
+
+export function setSessionToolEnabled(dataDir: string, sessionId: string, toolId: ToolId, enabled: boolean) {
+  const current = loadSessionContext(dataDir, sessionId);
+  const next = new Set(current.enabledTools);
+  if (enabled) next.add(toolId);
+  else next.delete(toolId);
+  saveSessionContext(dataDir, sessionId, {
+    ...current,
+    enabledTools: Array.from(next),
+  });
   return resolveToolContext(dataDir, sessionId);
 }

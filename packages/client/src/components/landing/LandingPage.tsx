@@ -7,7 +7,7 @@ import ProfileModal from './ProfileModal';
 import SystemPromptModal from './SystemPromptModal';
 import SessionPromptDraftModal from './SessionPromptDraftModal';
 import LLMConfigModal from './LLMConfigModal';
-import SearchConfigModal from './SearchConfigModal';
+import ToolsModal from './ToolsModal';
 import ContextPreviewModal from '../ContextPreviewModal';
 import * as api from '../../api/client';
 
@@ -15,9 +15,20 @@ interface Props {
   sessions: Session[];
   onStart: (concept: string) => void;
   onLoadSession: (id: string) => void;
+  draft?: api.SessionDraftResponse;
+  onSaveDraft?: (draft: api.SessionDraftResponse) => Promise<unknown>;
 }
 
-export default function LandingPage({ sessions, onStart, onLoadSession }: Props) {
+const fallbackDraft: api.SessionDraftResponse = {
+  manifest: {
+    version: 1,
+    profileSelection: { mode: 'inherit_all' },
+    enabledTools: ['read_file', 'write_file', 'fetch_url'],
+  },
+  sessionPrompt: '',
+};
+
+export default function LandingPage({ sessions, onStart, onLoadSession, draft = fallbackDraft, onSaveDraft = async () => {} }: Props) {
   const [conceptInput, setConceptInput] = useState('');
   const [modal, setModal] = useState<
     'profile' | 'system-prompt' | 'session-prompt' | 'llm' | 'search' | 'context-preview' | null
@@ -115,11 +126,16 @@ export default function LandingPage({ sessions, onStart, onLoadSession }: Props)
       </div>
 
       {/* Modals */}
-      <ProfileModal open={modal === 'profile'} onClose={handleCloseModal} />
+      <ProfileModal open={modal === 'profile'} onClose={handleCloseModal} draft={draft} onSaveDraft={onSaveDraft} />
       <SystemPromptModal open={modal === 'system-prompt'} onClose={handleCloseModal} />
-      <SessionPromptDraftModal open={modal === 'session-prompt'} onClose={handleCloseModal} />
+      <SessionPromptDraftModal
+        open={modal === 'session-prompt'}
+        onClose={handleCloseModal}
+        draft={draft}
+        onSaveDraft={onSaveDraft}
+      />
       <LLMConfigModal open={modal === 'llm'} onClose={handleCloseModal} />
-      <SearchConfigModal open={modal === 'search'} onClose={handleCloseModal} />
+      <ToolsModal open={modal === 'search'} onClose={handleCloseModal} draft={draft} onSaveDraft={onSaveDraft} />
       <ContextPreviewModal
         open={modal === 'context-preview'}
         onClose={handleCloseModal}

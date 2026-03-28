@@ -108,8 +108,8 @@ describe('Tool manager routes', () => {
 
     const res = await request(app).get(`/api/session/${id}/tools`);
     expect(res.status).toBe(200);
-    expect(res.body.sessionConfig.toolOverrides ?? {}).toEqual({});
-    expect(res.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(true);
+    expect(res.body.sessionConfig.toolOverrides.web_search).toEqual({ enabled: false });
+    expect(res.body.tools.find((tool: { id: string; enabled: boolean }) => tool.id === 'web_search').enabled).toBe(false);
   });
 
   it('PUT /api/session/:id/tools saves and clears a session override', async () => {

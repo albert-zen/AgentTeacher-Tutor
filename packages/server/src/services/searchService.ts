@@ -101,7 +101,7 @@ export async function searchWeb(dataDir: string, sessionId: string, input: WebSe
   }
 
   try {
-    const runtimeManager = getToolRuntimeManager(process.cwd());
+    const runtimeManager = getToolRuntimeManager(dataDir);
     const snapshot = await runtimeManager.ensureReady('web_search', config);
     if (snapshot.status !== 'ready') {
       return {

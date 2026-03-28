@@ -5,32 +5,40 @@ import * as api from '../../api/client';
 interface Props {
   open: boolean;
   onClose: () => void;
+  draft?: api.SessionDraftResponse;
+  onSaveDraft?: (draft: api.SessionDraftResponse) => Promise<unknown>;
 }
 
-export default function SessionPromptDraftModal({ open, onClose }: Props) {
-  const [content, setContent] = useState('');
+const fallbackDraft: api.SessionDraftResponse = {
+  manifest: {
+    version: 1,
+    profileSelection: { mode: 'inherit_all' },
+    enabledTools: ['read_file', 'write_file', 'fetch_url'],
+  },
+  sessionPrompt: '',
+};
+
+export default function SessionPromptDraftModal({
+  open,
+  onClose,
+  draft = fallbackDraft,
+  onSaveDraft = async () => {},
+}: Props) {
+  const [content, setContent] = useState(draft.sessionPrompt);
   const [saving, setSaving] = useState(false);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setLoaded(false);
-    api
-      .getSessionPromptDraft()
-      .then((res) => {
-        setContent(res.content);
-        setLoaded(true);
-      })
-      .catch(() => {
-        setContent('');
-        setLoaded(true);
-      });
-  }, [open]);
+    setContent(draft.sessionPrompt);
+  }, [draft.sessionPrompt, open]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.updateSessionPromptDraft(content);
+      await onSaveDraft({
+        ...draft,
+        sessionPrompt: content,
+      });
       onClose();
     } finally {
       setSaving(false);
@@ -40,18 +48,12 @@ export default function SessionPromptDraftModal({ open, onClose }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="新 Session 教学指令">
       <p className="text-xs text-zinc-500 mb-3">开始新 Session 时会自动注入此内容。每个 Session 创建后可独立修改。</p>
-      {loaded ? (
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="例如：该学生有物理背景，请多用物理类比..."
-          className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 placeholder:text-zinc-600 resize-none focus:outline-none focus:border-zinc-500 transition-colors"
-        />
-      ) : (
-        <div className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg flex items-center justify-center text-zinc-600 text-sm">
-          加载中...
-        </div>
-      )}
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="例如：该学生有物理背景，请多用物理类比..."
+        className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 placeholder:text-zinc-600 resize-none focus:outline-none focus:border-zinc-500 transition-colors"
+      />
       <div className="flex justify-end gap-2 mt-3">
         <button onClick={onClose} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
           取消

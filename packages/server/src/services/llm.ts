@@ -1,12 +1,10 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, tool, stepCountIs, type ModelMessage } from 'ai';
-import { z } from 'zod';
+import { streamText, stepCountIs, type ModelMessage } from 'ai';
 import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import type { FileService } from './fileService.js';
-import { fetchUrl } from './fetchUrlService.js';
-import { searchWeb } from './searchService.js';
 import type { ToolId } from './toolDefinitions.js';
+import { getToolRegistry } from './toolRegistry.js';
 
 export interface LLMConfig {
   provider: string;
@@ -60,80 +58,13 @@ export function createLLMClient(config: LLMConfig) {
 }
 
 export function buildTools(fileService: FileService, dataDir: string, sessionId: string, enabledTools: ToolId[]) {
-  return {
-    ...(enabledTools.includes('read_file')
-      ? {
-          read_file: tool({
-      description: 'Read a file or specific line range from the session workspace.',
-      inputSchema: z.object({
-        path: z.string().describe('Relative file path'),
-        startLine: z.number().optional().describe('Start line (1-based)'),
-        endLine: z.number().optional().describe('End line (1-based, inclusive)'),
-      }),
-      execute: async (args) => {
-        try {
-          const data = fileService.readFile(args);
-          return { success: true, data };
-        } catch (err: unknown) {
-          return { success: false, error: err instanceof Error ? err.message : String(err) };
-        }
-      },
-          }),
-        }
-      : {}),
-    ...(enabledTools.includes('write_file')
-      ? {
-          write_file: tool({
-      description:
-        'Create or update a file. Without line numbers: full write. With line numbers: replace specified lines.',
-      inputSchema: z.object({
-        path: z.string().describe('Relative file path'),
-        content: z.string().describe('Content to write'),
-        startLine: z.number().optional().describe('Start line for partial replace (1-based)'),
-        endLine: z.number().optional().describe('End line for partial replace (1-based, inclusive)'),
-      }),
-      execute: async (args) => {
-        try {
-          fileService.writeFile(args);
-          return { success: true, data: { path: args.path, written: true } };
-        } catch (err: unknown) {
-          return { success: false, error: err instanceof Error ? err.message : String(err) };
-        }
-      },
-          }),
-        }
-      : {}),
-    ...(enabledTools.includes('fetch_url')
-      ? {
-          fetch_url: tool({
-      description: 'Fetch and extract the readable content of a webpage URL.',
-      inputSchema: z.object({
-        url: z.string().url().describe('HTTP or HTTPS URL to fetch'),
-        maxChars: z.number().int().positive().max(40000).optional().describe('Optional maximum number of characters to keep'),
-      }),
-      execute: async (args) => fetchUrl(args),
-          }),
-        }
-      : {}),
-    ...(enabledTools.includes('web_search')
-      ? {
-          web_search: tool({
-      description: 'Search the web for up-to-date information and source links.',
-      inputSchema: z.object({
-        query: z.string().describe('Search query'),
-        maxResults: z.number().int().positive().max(10).optional().describe('Maximum number of results to return'),
-        category: z.string().optional().describe('Search category, such as general, news, it, or science'),
-        engines: z.array(z.string()).optional().describe('Optional list of search engines to use in external mode'),
-        timeRange: z
-          .enum(['day', 'month', 'year'])
-          .optional()
-          .describe('Optional recency window for time-sensitive queries'),
-      }),
-      execute: async (args) => searchWeb(dataDir, sessionId, args),
-          }),
-        }
-      : {}),
-  };
+  const registry = getToolRegistry();
+  return enabledTools.reduce<Record<string, ReturnType<(typeof registry)[ToolId]['buildSchema']>>>((acc, toolId) => {
+    const entry = registry[toolId];
+    if (!entry || !entry.exposeToModel) return acc;
+    acc[toolId] = entry.buildSchema({ fileService, dataDir, sessionId });
+    return acc;
+  }, {});
 }
 
 export function getSystemPrompt(): string {

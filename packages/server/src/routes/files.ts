@@ -10,10 +10,11 @@ import {
   loadLLMConfig,
   saveLLMConfig,
 } from '../services/llm.js';
-import { resolveToolContext, runToolRuntimeAction, updateGlobalToolState, updateSessionToolState } from '../services/toolManager.js';
-import { loadSessionTemplateConfig, loadToolConfig, saveSessionTemplateConfig } from '../services/toolConfig.js';
+import { resolveToolContext, runToolRuntimeAction, setDraftToolEnabled, setSessionToolEnabled, updateGlobalToolState } from '../services/toolManager.js';
+import { loadSessionContextConfig, loadToolConfig } from '../services/toolConfig.js';
 import type { ToolId } from '../services/toolDefinitions.js';
 import { buildTemplateContextPreview } from '../services/contextPreview.js';
+import { loadSessionDraft, saveSessionDraft, type SessionDraft } from '../services/sessionDraftService.js';
 
 export function createFilesRouter(store: Store, dataDir: string) {
   const router = Router();
@@ -129,23 +130,26 @@ export function createFilesRouter(store: Store, dataDir: string) {
     res.json({ success: true });
   });
 
-  // Session prompt draft (template for new sessions)
+  // Session draft (template for new sessions)
   router.get('/session-prompt-draft', (_req, res) => {
-    const draftPath = join(dataDir, 'session-prompt-draft.md');
-    if (!existsSync(draftPath)) {
-      res.json({ content: '', totalLines: 0 });
-      return;
-    }
-    const svc = new FileService(dataDir);
-    const result = svc.readFile({ path: 'session-prompt-draft.md' });
-    res.json(result);
+    const draft = loadSessionDraft(dataDir);
+    res.json({ content: draft.sessionPrompt, totalLines: draft.sessionPrompt ? draft.sessionPrompt.split('\n').length : 0 });
   });
 
   router.put('/session-prompt-draft', (req, res) => {
     const { content } = req.body;
-    const svc = new FileService(dataDir);
-    svc.writeFile({ path: 'session-prompt-draft.md', content });
+    const draft = loadSessionDraft(dataDir);
+    saveSessionDraft(dataDir, { ...draft, sessionPrompt: content ?? '' });
     res.json({ success: true });
+  });
+
+  router.get('/session-draft', (_req, res) => {
+    res.json(loadSessionDraft(dataDir));
+  });
+
+  router.put('/session-draft', (req, res) => {
+    const body = req.body as SessionDraft;
+    res.json(saveSessionDraft(dataDir, body));
   });
 
   // Global system prompt
@@ -173,6 +177,7 @@ export function createFilesRouter(store: Store, dataDir: string) {
     res.json({
       tools: context.visibleTools,
       globalConfig: context.globalConfig,
+      manifest: context.source.kind === 'draft' ? context.source.draft.manifest : null,
     });
   });
 
@@ -181,20 +186,41 @@ export function createFilesRouter(store: Store, dataDir: string) {
   });
 
   router.get('/session-template-config', (_req, res) => {
-    res.json(loadSessionTemplateConfig(dataDir));
+    const draft = loadSessionDraft(dataDir);
+    const profileBlockIds =
+      draft.manifest.profileSelection.mode === 'explicit' ? draft.manifest.profileSelection.blockIds : undefined;
+    res.json({ profileBlockIds });
   });
 
   router.put('/session-template-config', (req, res) => {
-    res.json(saveSessionTemplateConfig(dataDir, req.body));
+    const draft = loadSessionDraft(dataDir);
+    const profileBlockIds = Array.isArray(req.body.profileBlockIds) ? req.body.profileBlockIds : undefined;
+    const next = saveSessionDraft(dataDir, {
+      ...draft,
+      manifest: {
+        ...draft.manifest,
+        profileSelection:
+          profileBlockIds === undefined ? { mode: 'inherit_all' } : { mode: 'explicit', blockIds: profileBlockIds },
+      },
+    });
+    res.json({
+      profileBlockIds:
+        next.manifest.profileSelection.mode === 'explicit' ? next.manifest.profileSelection.blockIds : undefined,
+    });
   });
 
   router.put('/tools/:id', async (req, res) => {
     const toolId = req.params.id as ToolId;
     try {
-      const next = await updateGlobalToolState(dataDir, toolId, req.body);
+      const { enabled, ...patch } = req.body ?? {};
+      if (typeof enabled === 'boolean') {
+        setDraftToolEnabled(dataDir, toolId, enabled);
+      }
+      const next = await updateGlobalToolState(dataDir, toolId, patch);
       res.json({
         tools: next.visibleTools,
         globalConfig: next.globalConfig,
+        manifest: next.source.kind === 'draft' ? next.source.draft.manifest : null,
       });
     } catch (error: unknown) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
@@ -222,7 +248,7 @@ export function createFilesRouter(store: Store, dataDir: string) {
     const context = resolveToolContext(dataDir, session.id);
     res.json({
       tools: context.visibleTools,
-      sessionConfig: context.sessionConfig,
+      sessionConfig: loadSessionContextConfig(dataDir, session.id),
       globalConfig: context.globalConfig,
     });
   });
@@ -241,15 +267,16 @@ export function createFilesRouter(store: Store, dataDir: string) {
     }
 
     try {
-      const next = await updateSessionToolState(
-        dataDir,
-        session.id,
-        toolId,
-        override === false ? null : { enabled: enabled === undefined ? true : Boolean(enabled) },
-      );
+      const desiredEnabled =
+        override === false
+          ? resolveToolContext(dataDir).visibleTools.find((tool) => tool.id === toolId)?.enabled ?? false
+          : enabled === undefined
+            ? true
+            : Boolean(enabled);
+      const next = setSessionToolEnabled(dataDir, session.id, toolId, desiredEnabled);
       res.json({
         tools: next.visibleTools,
-        sessionConfig: next.sessionConfig,
+        sessionConfig: loadSessionContextConfig(dataDir, session.id),
         globalConfig: next.globalConfig,
       });
     } catch (error: unknown) {
@@ -264,7 +291,6 @@ export function createFilesRouter(store: Store, dataDir: string) {
 
   router.put('/search-config', async (req, res) => {
     const patch = {
-      enabledByDefault: req.body.enabled,
       runtimeMode: req.body.baseURL ? ('external' as const) : undefined,
       externalBaseURL: req.body.baseURL ? String(req.body.baseURL) : undefined,
       defaultMaxResults: req.body.defaultMaxResults === undefined ? undefined : Number(req.body.defaultMaxResults),
@@ -283,8 +309,8 @@ export function createFilesRouter(store: Store, dataDir: string) {
     const context = resolveToolContext(dataDir, session.id);
     const tool = context.visibleTools.find((item) => item.id === 'web_search');
     res.json({
-      override: context.sessionConfig.toolOverrides?.web_search?.enabled !== undefined,
-      localConfig: context.sessionConfig.toolOverrides?.web_search ?? null,
+      override: true,
+      localConfig: tool ? { enabled: tool.enabled } : null,
       effectiveConfig: tool?.config,
       runtimeStatus: tool ? { status: tool.status, message: tool.message } : null,
     });
@@ -296,16 +322,11 @@ export function createFilesRouter(store: Store, dataDir: string) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
-    const next = await updateSessionToolState(
-      dataDir,
-      session.id,
-      'web_search',
-      req.body.override === false ? null : { enabled: req.body.enabled === undefined ? true : Boolean(req.body.enabled) },
-    );
+    const next = setSessionToolEnabled(dataDir, session.id, 'web_search', req.body.enabled === undefined ? true : Boolean(req.body.enabled));
     const tool = next.visibleTools.find((item) => item.id === 'web_search');
     res.json({
-      override: next.sessionConfig.toolOverrides?.web_search?.enabled !== undefined,
-      localConfig: next.sessionConfig.toolOverrides?.web_search ?? null,
+      override: true,
+      localConfig: tool ? { enabled: tool.enabled } : null,
       effectiveConfig: tool?.config,
       runtimeStatus: tool ? { status: tool.status, message: tool.message } : null,
     });

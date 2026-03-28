@@ -208,12 +208,10 @@ export type ToolRuntimeMode = 'builtin' | 'local' | 'managed' | 'external';
 export type ToolRuntimeStatus = 'disabled' | 'stopped' | 'starting' | 'ready' | 'error';
 
 export interface BuiltinToolConfig {
-  enabledByDefault: boolean;
   runtimeMode: 'builtin';
 }
 
 export interface WebSearchToolConfig {
-  enabledByDefault: boolean;
   runtimeMode: 'local' | 'external';
   localProvider: 'duckduckgo';
   sidecar: {
@@ -231,11 +229,24 @@ export interface WebSearchToolConfig {
 }
 
 export interface BrowserToolConfig {
-  enabledByDefault: boolean;
   runtimeMode: 'managed' | 'external';
 }
 
 export type ToolConfig = BuiltinToolConfig | WebSearchToolConfig | BrowserToolConfig;
+
+export type ProfileSelection = { mode: 'inherit_all' } | { mode: 'explicit'; blockIds: string[] };
+
+export interface SessionDraftManifest {
+  version: 1;
+  profileSelection: ProfileSelection;
+  enabledTools: ToolId[];
+}
+
+export interface SessionContextManifest {
+  version: 1;
+  profileSelection: ProfileSelection;
+  enabledTools: ToolId[];
+}
 
 export interface ToolState {
   id: ToolId;
@@ -248,7 +259,6 @@ export interface ToolState {
   status: ToolRuntimeStatus;
   message?: string;
   config: ToolConfig;
-  sessionOverride?: { enabled?: boolean } | null;
 }
 
 export interface ToolConfigFile {
@@ -256,18 +266,14 @@ export interface ToolConfigFile {
   tools: Record<ToolId, ToolConfig>;
 }
 
-export interface SessionContextConfig {
-  profileBlockIds?: string[];
-  toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>>;
-}
-
 export interface ToolsResponse {
   tools: ToolState[];
   globalConfig: ToolConfigFile;
+  manifest: SessionDraftManifest | null;
 }
 
 export interface SessionToolsResponse extends ToolsResponse {
-  sessionConfig: SessionContextConfig;
+  sessionConfig: SessionContextManifest | null;
 }
 
 export async function getLLMStatus(): Promise<LLMStatus> {
@@ -331,7 +337,6 @@ export async function updateSessionTool(
   sessionId: string,
   config: {
     toolId: ToolId;
-    override: boolean;
     enabled?: boolean;
   }
 ): Promise<SessionToolsResponse> {
@@ -381,7 +386,7 @@ export interface ContextPreviewProcessPart {
   id: string;
   kind: 'text' | 'tool-call' | 'tool-result';
   title: string;
-  content?: string;
+  body?: string;
   toolName?: string;
   args?: Record<string, unknown>;
   result?: unknown;
@@ -395,13 +400,7 @@ export interface ContextPreviewSection {
   sourceLabel?: string;
   order: number;
   content?: string;
-  meta?: {
-    tools?: Array<{ id: ToolId; label: string; content: string }>;
-    blocks?: ProfileBlock[];
-    role?: 'user' | 'assistant';
-    createdAt?: string;
-    parts?: ContextPreviewProcessPart[];
-  };
+  meta?: Record<string, unknown>;
 }
 
 export interface ContextPreviewResponse {
@@ -422,13 +421,34 @@ export async function getSessionContextMemory(sessionId: string): Promise<Sessio
   return res.json();
 }
 
-export async function getSessionTemplateConfig(): Promise<SessionContextConfig> {
+export interface SessionDraftResponse {
+  manifest: SessionDraftManifest;
+  sessionPrompt: string;
+}
+
+export async function getSessionDraft(): Promise<SessionDraftResponse> {
+  const res = await fetch(`${BASE}/session-draft`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function updateSessionDraft(draft: SessionDraftResponse): Promise<SessionDraftResponse> {
+  const res = await fetch(`${BASE}/session-draft`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function getSessionTemplateConfig(): Promise<{ profileBlockIds?: string[] }> {
   const res = await fetch(`${BASE}/session-template-config`);
   await assertOk(res);
   return res.json();
 }
 
-export async function updateSessionTemplateConfig(config: SessionContextConfig): Promise<SessionContextConfig> {
+export async function updateSessionTemplateConfig(config: { profileBlockIds?: string[] }): Promise<{ profileBlockIds?: string[] }> {
   const res = await fetch(`${BASE}/session-template-config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -440,7 +460,7 @@ export async function updateSessionTemplateConfig(config: SessionContextConfig):
 
 export async function updateContextConfig(
   sessionId: string,
-  config: { profileBlockIds?: string[]; toolOverrides?: Partial<Record<ToolId, { enabled?: boolean }>> },
+  config: { profileBlockIds?: string[] },
 ): Promise<void> {
   const res = await fetch(`${BASE}/session/${sessionId}/context-config`, {
     method: 'PUT',
